@@ -56,7 +56,7 @@ Once running, access Vibe Kanban at:
 
 ## MCP Server Integration
 
-The Vibe Kanban MCP server is exposed via HTTP on port 9717, allowing external MCP clients to connect.
+The Vibe Kanban MCP server is exposed via **Streamable HTTP** (proper MCP HTTP transport) on port 9717 using [Supergateway](https://github.com/supercorp-ai/supergateway). This bridges the stdio-based Vibe Kanban MCP server to HTTP, allowing external MCP clients to connect.
 
 ### Available MCP Tools
 
@@ -79,22 +79,24 @@ The server provides these tools for managing projects and tasks:
 
 To connect an MCP client to the Vibe Kanban server:
 
-**Claude Code:**
+**Claude Code (Streamable HTTP):**
 ```bash
 claude mcp add --transport http vibe-kanban http://localhost:9717/mcp --scope user
 ```
 
-**Configuration File (claude.json):**
+**Manual Configuration (claude.json or similar):**
 ```json
 {
   "mcpServers": {
     "vibe-kanban": {
-      "transport": "http",
+      "transport": "streamableHttp",
       "url": "http://localhost:9717/mcp"
     }
   }
 }
 ```
+
+**Note**: The server uses Streamable HTTP transport, which is the proper MCP HTTP convention. Some clients may auto-detect this, while others may need the explicit `streamableHttp` transport type.
 
 ### Testing the MCP Server
 
