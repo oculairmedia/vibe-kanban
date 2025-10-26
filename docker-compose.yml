@@ -9,6 +9,8 @@ services:
     volumes:
       - vibe-data:/data
       - vibe-config:/root/.config
+      - ~/.claude:/home/appuser/.claude
+      - ~/.config/opencode:/home/appuser/.config/opencode
     environment:
       - PORT=3000
       - HOST=0.0.0.0
