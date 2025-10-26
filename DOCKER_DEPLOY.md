@@ -4,8 +4,9 @@ This guide explains how to deploy Vibe Kanban using Docker Compose with all nece
 
 ## What's Included
 
-The Docker image includes:
-- **Vibe Kanban** - The main application
+The Docker setup includes:
+- **Vibe Kanban** - The main application (port 3000)
+- **Vibe Kanban MCP Server** - HTTP-accessible MCP server (port 9717)
 - **Claude Code** - Anthropic's AI coding assistant
 - **OpenCode** - Additional development tools
 - **Standard CLI tools**: Git, Vim, Nano, Bash, SSH client
@@ -50,6 +51,62 @@ docker run -d \
 Once running, access Vibe Kanban at:
 - **Web UI**: http://localhost:3000
 - **Health Check**: http://localhost:3000/health
+- **MCP Server**: http://localhost:9717/mcp
+- **MCP Health**: http://localhost:9717/health
+
+## MCP Server Integration
+
+The Vibe Kanban MCP server is exposed via HTTP on port 9717, allowing external MCP clients to connect.
+
+### Available MCP Tools
+
+The server provides these tools for managing projects and tasks:
+
+**Project Operations:**
+- `list_projects` - Fetch all projects
+
+**Task Management:**
+- `list_tasks` - List tasks in a project (parameters: project_id, optional: status, limit)
+- `create_task` - Create a new task (parameters: project_id, title, optional: description)
+- `get_task` - Get task details (parameters: task_id)
+- `update_task` - Update task (parameters: task_id, optional: title, description, status)
+- `delete_task` - Delete a task (parameters: task_id)
+
+**Task Execution:**
+- `start_task_attempt` - Start working on a task (parameters: task_id, executor, base_branch, optional: variant)
+
+### Connecting MCP Clients
+
+To connect an MCP client to the Vibe Kanban server:
+
+**Claude Code:**
+```bash
+claude mcp add --transport http vibe-kanban http://localhost:9717/mcp --scope user
+```
+
+**Configuration File (claude.json):**
+```json
+{
+  "mcpServers": {
+    "vibe-kanban": {
+      "transport": "http",
+      "url": "http://localhost:9717/mcp"
+    }
+  }
+}
+```
+
+### Testing the MCP Server
+
+```bash
+# Check if the MCP server is running
+curl http://localhost:9717/health
+
+# Test MCP endpoint (list tools)
+curl -X POST http://localhost:9717/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 
 ## Using CLI Tools Inside the Container
 
