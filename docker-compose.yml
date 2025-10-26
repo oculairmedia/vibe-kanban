@@ -22,6 +22,30 @@ services:
       retries: 3
       start_period: 40s
 
+  vibe-kanban-mcp:
+    image: node:24-alpine
+    container_name: vibe-kanban-mcp
+    ports:
+      - "9717:9717"
+    volumes:
+      - ./mcp-http-server.js:/app/mcp-http-server.js:ro
+    working_dir: /app
+    command: >
+      sh -c "npm install -g express @modelcontextprotocol/sdk vibe-kanban &&
+             node /app/mcp-http-server.js"
+    environment:
+      - MCP_PORT=9717
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9717/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - vibe-kanban
+
 volumes:
   vibe-data:
   vibe-config:
