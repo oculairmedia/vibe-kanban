@@ -1,0 +1,92 @@
+# Build stage
+FROM node:24-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    curl \
+    build-base \
+    perl \
+    llvm-dev \
+    clang-dev
+
+# Allow linking libclang on musl
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files for dependency caching
+COPY package*.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY frontend/package*.json ./frontend/
+COPY npx-cli/package*.json ./npx-cli/
+
+# Install pnpm and dependencies
+RUN npm install -g pnpm && pnpm install
+
+# Copy source code
+COPY . .
+
+# Build application
+RUN npm run generate-types
+RUN cd frontend && pnpm run build
+RUN cargo build --release --bin server
+
+# Runtime stage with CLI tools
+FROM node:24-alpine AS runtime
+
+# Install runtime dependencies and CLI tools
+RUN apk add --no-cache \
+    ca-certificates \
+    tini \
+    libgcc \
+    wget \
+    curl \
+    git \
+    bash \
+    vim \
+    nano \
+    openssh-client \
+    sudo
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Install OpenCode
+RUN curl -fsSL https://opencode.ai/install | bash
+
+# Create app user for security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup && \
+    echo "appuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Set working directory
+WORKDIR /app
+
+# Copy built application from builder
+COPY --from=builder --chown=appuser:appgroup /app/target/release/server /app/server
+COPY --from=builder --chown=appuser:appgroup /app/frontend/dist /app/frontend/dist
+COPY --from=builder --chown=appuser:appgroup /app/dev_assets_seed /app/dev_assets_seed
+
+# Set environment variables
+ENV PORT=3000
+ENV NODE_ENV=production
+
+# Switch to app user
+USER appuser
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+# Use tini as init system
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Run server
+CMD ["./server"]
