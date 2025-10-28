@@ -1,7 +1,7 @@
 # Build stage - use Debian for glibc (bindgen/libclang compatibility)
 FROM rust:1-slim-bookworm AS builder
 
-# Install build dependencies
+# Install build dependencies including git for fetching git dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     cmake \
     zlib1g-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust nightly (required for edition 2024)
@@ -18,8 +19,11 @@ RUN rustup default nightly
 WORKDIR /app
 
 # Copy workspace configuration
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+
+# Configure git to use https for GitHub (public repos don't need auth)
+RUN git config --global url."https://github.com/".insteadOf git@github.com:
 
 # Build the MCP task server binary
 RUN cargo build --release --bin mcp_task_server
