@@ -11,13 +11,13 @@ fn default_git_branch_prefix() -> String {
     "vk".to_string()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS, Default, schemars::JsonSchema)]
 pub struct ShowcaseState {
     #[serde(default)]
     pub seen_features: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString, schemars::JsonSchema)]
 #[ts(use_ts_enum)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -27,7 +27,7 @@ pub enum ThemeMode {
     System,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct Config {
     pub config_version: String,
     pub theme: ThemeMode,

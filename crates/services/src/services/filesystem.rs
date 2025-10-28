@@ -10,7 +10,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FilesystemService {}
 
 #[derive(Debug, Error)]
@@ -28,7 +28,7 @@ pub struct DirectoryListResponse {
     pub current_path: String,
 }
 
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Serialize, schemars::JsonSchema, TS)]
 pub struct DirectoryEntry {
     pub name: String,
     pub path: PathBuf,

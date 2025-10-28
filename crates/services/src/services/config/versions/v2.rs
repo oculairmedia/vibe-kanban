@@ -103,7 +103,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct GitHubConfig {
     pub pat: Option<String>,
     pub oauth_token: Option<String>,
@@ -124,7 +124,7 @@ impl From<v1::GitHubConfig> for GitHubConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct NotificationConfig {
     pub sound_enabled: bool,
     pub push_enabled: bool,
@@ -172,7 +172,7 @@ impl GitHubConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString, schemars::JsonSchema)]
 #[ts(use_ts_enum)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -265,7 +265,7 @@ impl From<v1::SoundFile> for SoundFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct EditorConfig {
     editor_type: EditorType,
     custom_command: Option<String>,
@@ -280,7 +280,7 @@ impl From<v1::EditorConfig> for EditorConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, EnumString, schemars::JsonSchema)]
 #[ts(use_ts_enum)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
