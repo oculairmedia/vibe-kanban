@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
 use uuid::Uuid;
 
-use crate::routes::task_attempts::CreateTaskAttemptBody;
+use crate::routes::task_attempts::{CreateTaskAttemptBody, CreateFollowupAttemptBody};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateTaskRequest {
@@ -216,6 +216,23 @@ pub struct StartTaskAttemptRequest {
 pub struct StartTaskAttemptResponse {
     pub task_id: String,
     pub attempt_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateFollowupAttemptRequest {
+    #[schemars(description = "The ID of the previous attempt to base this follow-up on")]
+    pub previous_attempt_id: Uuid,
+    #[schemars(description = "Feedback or additional instructions for the follow-up attempt")]
+    pub feedback: String,
+    #[schemars(description = "Optional executor variant override")]
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateFollowupAttemptResponse {
+    pub task_id: String,
+    pub previous_attempt_id: String,
+    pub new_attempt_id: String,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -569,6 +586,53 @@ impl TaskServer {
     }
 
     #[tool(
+        description = "Create a follow-up task attempt based on a previous attempt with additional feedback or review comments. This is useful when you want to create a new attempt that addresses review feedback from a previous attempt."
+    )]
+    async fn create_followup_attempt(
+        &self,
+        Parameters(CreateFollowupAttemptRequest {
+            previous_attempt_id,
+            feedback,
+            variant,
+        }): Parameters<CreateFollowupAttemptRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let feedback_trimmed = feedback.trim();
+        if feedback_trimmed.is_empty() {
+            return Self::err("Feedback must not be empty.".to_string(), None::<String>);
+        }
+
+        let variant = variant.and_then(|v| {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        let payload = CreateFollowupAttemptBody {
+            previous_attempt_id,
+            feedback: feedback_trimmed.to_string(),
+            variant,
+        };
+
+        let url = self.url("/api/task-attempts/followup");
+        let attempt: TaskAttempt = match self.send_json(self.client.post(&url).json(&payload)).await
+        {
+            Ok(attempt) => attempt,
+            Err(e) => return Ok(e),
+        };
+
+        let response = CreateFollowupAttemptResponse {
+            task_id: attempt.task_id.to_string(),
+            previous_attempt_id: previous_attempt_id.to_string(),
+            new_attempt_id: attempt.id.to_string(),
+        };
+
+        TaskServer::success(&response)
+    }
+
+    #[tool(
         description = "Update an existing task/ticket's title, description, or status. `project_id` and `task_id` are required! `title`, `description`, and `status` are optional."
     )]
     async fn update_task(
@@ -713,7 +777,7 @@ impl ServerHandler for TaskServer {
                 name: "vibe-kanban".to_string(),
                 version: "1.0.0".to_string(),
             },
-            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
+            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'create_followup_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt_details'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
         }
     }
 }
