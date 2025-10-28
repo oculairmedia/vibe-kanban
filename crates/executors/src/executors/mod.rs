@@ -31,7 +31,7 @@ pub mod gemini;
 pub mod opencode;
 pub mod qwen;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS, JsonSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BaseAgentCapability {
     SessionFork,
