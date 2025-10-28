@@ -191,6 +191,122 @@ pub async fn create_task_attempt(
     Ok(ResponseJson(ApiResponse::success(task_attempt)))
 }
 
+/// Create a follow-up attempt based on a previous attempt with feedback
+#[axum::debug_handler]
+pub async fn create_followup_attempt(
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<CreateFollowupAttemptBody>,
+) -> Result<ResponseJson<ApiResponse<TaskAttempt>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Load the previous attempt
+    let previous_attempt = TaskAttempt::find_by_id(pool, payload.previous_attempt_id)
+        .await?
+        .ok_or(SqlxError::RowNotFound)?;
+
+    // Load the task
+    let task = Task::find_by_id(pool, previous_attempt.task_id)
+        .await?
+        .ok_or(SqlxError::RowNotFound)?;
+
+    // Get parent project
+    let project = task
+        .parent_project(pool)
+        .await?
+        .ok_or(SqlxError::RowNotFound)?;
+
+    // Get executor profile from previous attempt
+    let previous_executor_profile = ExecutionProcess::latest_executor_profile_for_attempt(
+        pool,
+        previous_attempt.id,
+    )
+    .await?;
+
+    // Use variant from request if provided, otherwise use previous executor's variant
+    let executor_profile_id = ExecutorProfileId {
+        executor: previous_executor_profile.executor.clone(),
+        variant: payload.variant.or(previous_executor_profile.variant),
+    };
+
+    // Generate new attempt ID and branch name
+    let attempt_id = Uuid::new_v4();
+    let git_branch_name = deployment
+        .container()
+        .git_branch_from_task_attempt(&attempt_id, &task.title)
+        .await;
+
+    // Create the new task attempt using the same base branch as previous attempt
+    let task_attempt = TaskAttempt::create(
+        pool,
+        &CreateTaskAttempt {
+            executor: previous_executor_profile.executor,
+            base_branch: previous_attempt.target_branch.clone(),
+            branch: git_branch_name.clone(),
+        },
+        attempt_id,
+        task.id,
+    )
+    .await?;
+
+    // Create the container/worktree for the new attempt
+    deployment.container().create(&task_attempt).await?;
+
+    // Get latest version of task attempt with container_ref populated
+    let task_attempt = TaskAttempt::find_by_id(pool, task_attempt.id)
+        .await?
+        .ok_or(SqlxError::RowNotFound)?;
+
+    // Build the prompt: include task context + feedback
+    let task_prompt = task.to_prompt();
+    let combined_prompt = format!(
+        "{}\n\nFollow-up instructions based on previous attempt:\n{}",
+        task_prompt, payload.feedback
+    );
+
+    let cleanup_action = deployment
+        .container()
+        .cleanup_action(project.cleanup_script);
+
+    // Create executor action with the combined prompt
+    let action = ExecutorAction::new(
+        ExecutorActionType::CodingAgentInitialRequest(
+            executors::actions::coding_agent_initial::CodingAgentInitialRequest {
+                prompt: combined_prompt,
+                executor_profile_id: executor_profile_id.clone(),
+            },
+        ),
+        cleanup_action,
+    );
+
+    // Start execution with the feedback as the initial prompt
+    let execution_process = deployment
+        .container()
+        .start_execution(
+            &task_attempt,
+            &action,
+            &ExecutionProcessRunReason::CodingAgent,
+        )
+        .await?;
+
+    // Track analytics
+    deployment
+        .track_if_analytics_allowed(
+            "followup_attempt_created",
+            serde_json::json!({
+                "task_id": task_attempt.task_id.to_string(),
+                "previous_attempt_id": payload.previous_attempt_id.to_string(),
+                "attempt_id": task_attempt.id.to_string(),
+                "executor": &executor_profile_id.executor,
+                "variant": &executor_profile_id.variant,
+            }),
+        )
+        .await;
+
+    tracing::info!("Created follow-up attempt {} with execution process {}", task_attempt.id, execution_process.id);
+
+    Ok(ResponseJson(ApiResponse::success(task_attempt)))
+}
+
 #[derive(Debug, Deserialize, TS)]
 pub struct CreateFollowUpAttempt {
     pub prompt: String,
@@ -199,6 +315,16 @@ pub struct CreateFollowUpAttempt {
     pub retry_process_id: Option<Uuid>,
     pub force_when_dirty: Option<bool>,
     pub perform_git_reset: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct CreateFollowupAttemptBody {
+    /// Previous attempt ID to base this on
+    pub previous_attempt_id: Uuid,
+    /// Feedback or instructions for this follow-up attempt
+    pub feedback: String,
+    /// Optional executor profile variant override
+    pub variant: Option<String>,
 }
 
 pub async fn follow_up(
@@ -1495,6 +1621,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     let task_attempts_router = Router::new()
         .route("/", get(get_task_attempts).post(create_task_attempt))
+        .route("/followup", post(create_followup_attempt))
         .nest("/{id}", task_attempt_id_router);
 
     Router::new().nest("/task-attempts", task_attempts_router)
