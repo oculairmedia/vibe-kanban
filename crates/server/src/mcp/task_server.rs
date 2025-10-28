@@ -5,13 +5,45 @@ use db::models::{
     task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     task_attempt::TaskAttempt,
 };
-use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
 use turbomcp::prelude::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
 use uuid::Uuid;
 
 use crate::routes::task_attempts::CreateTaskAttemptBody;
+
+// Minimal copy of ExecutorProfileId to avoid depending on executors crate
+// which has codex-protocol compilation issues
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+struct McpExecutorProfileId {
+    executor: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    variant: Option<String>,
+}
+
+// Valid executor names (from executors::executors::BaseCodingAgent enum)
+const VALID_EXECUTORS: &[&str] = &[
+    "CLAUDE_CODE",
+    "AMP",
+    "GEMINI",
+    "CODEX",
+    "OPENCODE",
+    "CURSOR",
+    "QWEN_CODE",
+    "COPILOT",
+];
+
+fn validate_executor(executor: &str) -> Result<(), String> {
+    if VALID_EXECUTORS.contains(&executor) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unknown executor '{}'. Valid executors are: {}",
+            executor,
+            VALID_EXECUTORS.join(", ")
+        ))
+    }
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateTaskRequest {
@@ -408,15 +440,9 @@ impl TaskServer {
         }
 
         let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
-        let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
-            Ok(exec) => exec,
-            Err(_) => {
-                return Err(McpError::invalid_request(format!(
-                    "Unknown executor '{}'.",
-                    executor_trimmed
-                )));
-            }
-        };
+        if let Err(err_msg) = validate_executor(&normalized_executor) {
+            return Err(McpError::invalid_request(err_msg));
+        }
 
         let variant = request.variant.and_then(|v| {
             let trimmed = v.trim();
@@ -427,14 +453,21 @@ impl TaskServer {
             }
         });
 
-        let executor_profile_id = ExecutorProfileId {
-            executor: base_executor,
+        let executor_profile_id = McpExecutorProfileId {
+            executor: normalized_executor,
             variant,
         };
 
+        // Convert McpExecutorProfileId to JSON and then parse as the backend's ExecutorProfileId
+        // This works because they have the same structure - we just can't depend on executors crate
+        let executor_json = serde_json::to_value(&executor_profile_id)
+            .map_err(|e| McpError::internal_error(format!("Failed to serialize executor: {}", e)))?;
+        let backend_executor_profile_id = serde_json::from_value(executor_json)
+            .map_err(|e| McpError::internal_error(format!("Failed to deserialize executor: {}", e)))?;
+
         let payload = CreateTaskAttemptBody {
             task_id: request.task_id,
-            executor_profile_id,
+            executor_profile_id: backend_executor_profile_id,
             base_branch,
         };
 

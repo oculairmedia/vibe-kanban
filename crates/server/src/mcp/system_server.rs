@@ -1,10 +1,5 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use executors::{
-    executors::{BaseCodingAgent, StandardCodingAgentExecutor},
-    mcp_config::read_agent_config,
-    profile::ExecutorConfigs,
-};
 use rmcp::{
     handler::server::tool::{Parameters, ToolRouter},
     model::{
@@ -19,6 +14,31 @@ use services::services::{
 };
 
 use crate::routes::config::Environment;
+
+// Valid executor names (from executors::executors::BaseCodingAgent enum)
+// Avoiding dependency on executors crate which has codex-protocol compilation issues
+const VALID_EXECUTORS: &[&str] = &[
+    "CLAUDE_CODE",
+    "AMP",
+    "GEMINI",
+    "CODEX",
+    "OPENCODE",
+    "CURSOR",
+    "QWEN_CODE",
+    "COPILOT",
+];
+
+fn validate_executor(executor: &str) -> Result<(), String> {
+    if VALID_EXECUTORS.contains(&executor) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unknown executor '{}'. Valid executors are: {}",
+            executor,
+            VALID_EXECUTORS.join(", ")
+        ))
+    }
+}
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct SystemInfo {
@@ -227,8 +247,11 @@ impl SystemServer {
             // Parse executor profile string (format: "EXECUTOR" or "EXECUTOR:VARIANT")
             let parts: Vec<&str> = profile_str.split(':').collect();
             let executor_str = parts[0].trim().replace('-', "_").to_ascii_uppercase();
-            let executor = executor_str.parse::<BaseCodingAgent>()
-                .map_err(|_| format!("Invalid executor: {}", parts[0]))?;
+
+            // Validate executor name against known executors
+            if let Err(err_msg) = validate_executor(&executor_str) {
+                return Err(err_msg);
+            }
 
             let variant = if parts.len() > 1 {
                 Some(parts[1].trim().to_string())
@@ -236,7 +259,11 @@ impl SystemServer {
                 None
             };
 
-            config.executor_profile = executors::profile::ExecutorProfileId { executor, variant };
+            // NOTE: We can't set config.executor_profile directly because we don't have
+            // access to executors::profile::ExecutorProfileId anymore. This functionality
+            // needs to be updated via the REST API instead, which still has executors dependency.
+            // For now, we return an error directing users to use the web UI or API.
+            return Err("Updating executor profile via MCP system server is temporarily disabled. Please use the Vibe Kanban web UI or REST API at /api/config/config instead.".to_string());
         }
         if let Some(analytics) = updates.analytics_enabled {
             config.analytics_enabled = Some(analytics);
@@ -338,77 +365,25 @@ impl SystemServer {
         // Parse executor
         let executor_trimmed = executor.trim();
         let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
-        let base_executor = match normalized_executor.parse::<BaseCodingAgent>() {
-            Ok(exec) => exec,
-            Err(_) => {
-                return Self::err(
-                    format!("Unknown executor '{}'", executor_trimmed),
-                    None,
-                );
-            }
-        };
 
-        // Get executor config
-        let profiles = ExecutorConfigs::get_cached();
-        let coding_agent = match profiles.get_coding_agent(&executors::profile::ExecutorProfileId::new(base_executor)) {
-            Some(agent) => agent,
-            None => {
-                return Self::err("Executor not found", None);
-            }
-        };
-
-        if !coding_agent.supports_mcp() {
-            return Self::err("This executor does not support MCP servers", None);
+        // Validate executor name
+        if let Err(err_msg) = validate_executor(&normalized_executor) {
+            return Self::err(err_msg, None);
         }
 
-        // Get MCP config path
-        let config_path = match coding_agent.default_mcp_config_path() {
-            Some(path) => path.to_path_buf(),
-            None => {
-                return Self::err("Could not determine MCP config path", None);
-            }
-        };
-
-        // Read MCP config
-        let mcpc = coding_agent.get_mcp_config();
-        let raw_config = match read_agent_config(&config_path, &mcpc).await {
-            Ok(cfg) => cfg,
-            Err(e) => {
-                return Self::err(format!("Failed to read MCP config: {}", e), None);
-            }
-        };
-
-        // Extract servers
-        let mut current = &raw_config;
-        for part in &mcpc.servers_path {
-            current = match current.get(part) {
-                Some(val) => val,
-                None => {
-                    return Self::success(&ListMcpServersResponse {
-                        servers: vec![],
-                        executor: executor_trimmed.to_string(),
-                        config_path: config_path.to_string_lossy().to_string(),
-                    });
-                }
-            };
-        }
-
-        let servers: Vec<McpServerInfo> = match current.as_object() {
-            Some(servers_obj) => servers_obj
-                .iter()
-                .map(|(name, config)| McpServerInfo {
-                    name: name.clone(),
-                    config: config.clone(),
-                })
-                .collect(),
-            None => vec![],
-        };
-
-        Self::success(&ListMcpServersResponse {
-            servers,
-            executor: executor_trimmed.to_string(),
-            config_path: config_path.to_string_lossy().to_string(),
-        })
+        // NOTE: This functionality requires access to executors crate which has
+        // codex-protocol compilation issues. The MCP server reading logic depends on
+        // ExecutorConfigs::get_cached() and read_agent_config() which are not available.
+        // Users should access MCP configs directly via the filesystem or use the web UI.
+        Self::err(
+            "Listing MCP servers via system server is temporarily disabled due to build issues. \
+             Please access MCP config files directly from the filesystem, or use the Vibe Kanban web UI.",
+            Some(format!(
+                "Requested executor: {}. Config files are typically in ~/.config/{}/",
+                executor_trimmed,
+                executor_trimmed.to_lowercase()
+            ))
+        )
     }
 
     #[tool(description = "Update MCP server configuration for a specific executor")]
