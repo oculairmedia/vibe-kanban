@@ -12,7 +12,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copy workspace configuration
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY crates ./crates
 
 # Build the MCP system server binary
