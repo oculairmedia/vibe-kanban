@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     openssl-libs-static \
     pkgconfig \
     perl \
-    make
+    make \
+    clang-dev
 
 # Set working directory
 WORKDIR /app
