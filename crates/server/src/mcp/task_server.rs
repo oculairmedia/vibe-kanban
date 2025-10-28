@@ -35,7 +35,7 @@ pub struct CreateTaskResponse {
     pub task_id: String,
 }
 
-#[derive(Debug, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProjectSummary {
     #[schemars(description = "The unique identifier of the project")]
     pub id: String,
