@@ -126,6 +126,130 @@ pub async fn get_task_attempt(
     Ok(ResponseJson(ApiResponse::success(task_attempt)))
 }
 
+/// Get detailed information about a task attempt including execution processes, commits, and branch status
+pub async fn get_task_attempt_details(
+    Extension(task_attempt): Extension<TaskAttempt>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<TaskAttemptDetails>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Fetch all execution processes for this attempt (excluding dropped ones)
+    let execution_processes = ExecutionProcess::find_by_task_attempt_id(pool, task_attempt.id, false)
+        .await?;
+
+    // Convert to summary format
+    let execution_process_summaries: Vec<ExecutionProcessSummary> = execution_processes
+        .iter()
+        .map(|ep| ExecutionProcessSummary {
+            id: ep.id.to_string(),
+            status: ep.status.clone(),
+            run_reason: ep.run_reason.clone(),
+            exit_code: ep.exit_code,
+            before_head_commit: ep.before_head_commit.clone(),
+            after_head_commit: ep.after_head_commit.clone(),
+            started_at: ep.started_at.to_rfc3339(),
+            completed_at: ep.completed_at.map(|dt| dt.to_rfc3339()),
+        })
+        .collect();
+
+    // Collect unique commits from completed execution processes
+    let mut commits: Vec<CommitInfo> = Vec::new();
+    let mut seen_commits = std::collections::HashSet::new();
+
+    // Try to get worktree path for commit info lookup
+    let worktree_path = match deployment
+        .container()
+        .ensure_container_exists(&task_attempt)
+        .await
+    {
+        Ok(path) => Some(path),
+        Err(_) => None,
+    };
+
+    for ep in &execution_processes {
+        if let Some(commit_sha) = &ep.after_head_commit {
+            if !seen_commits.contains(commit_sha) {
+                seen_commits.insert(commit_sha.clone());
+
+                // Try to get commit subject if worktree is available
+                let subject = if let Some(ref wt_path) = worktree_path {
+                    deployment
+                        .git()
+                        .get_commit_subject(std::path::Path::new(wt_path), commit_sha)
+                        .unwrap_or_else(|_| commit_sha[..7].to_string())
+                } else {
+                    commit_sha[..7].to_string()
+                };
+
+                commits.push(CommitInfo {
+                    sha: commit_sha.clone(),
+                    subject,
+                });
+            }
+        }
+    }
+
+    // Get simplified branch status (best effort)
+    let branch_status = match worktree_path {
+        Some(ref wt_path) => {
+            let task = task_attempt.parent_task(pool).await?;
+            let project = if let Some(task) = task {
+                Project::find_by_id(pool, task.project_id).await?
+            } else {
+                None
+            };
+
+            if let Some(project) = project {
+                // Get commits ahead/behind
+                let (commits_ahead, commits_behind) = deployment
+                    .git()
+                    .get_branch_status(
+                        &project.git_repo_path,
+                        &task_attempt.branch,
+                        &task_attempt.target_branch,
+                    )
+                    .ok()
+                    .unzip();
+
+                // Check for uncommitted changes
+                let has_uncommitted_changes = deployment
+                    .container()
+                    .is_container_clean(&task_attempt)
+                    .await
+                    .ok()
+                    .map(|is_clean| !is_clean);
+
+                // Get HEAD OID
+                let head_oid = deployment
+                    .git()
+                    .get_head_info(std::path::Path::new(wt_path))
+                    .ok()
+                    .map(|h| h.oid);
+
+                Some(BranchStatusSummary {
+                    commits_ahead,
+                    commits_behind,
+                    has_uncommitted_changes,
+                    head_oid,
+                    target_branch_name: task_attempt.target_branch.clone(),
+                })
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
+
+    let details = TaskAttemptDetails {
+        attempt: task_attempt,
+        execution_processes: execution_process_summaries,
+        commits,
+        branch_status,
+    };
+
+    Ok(ResponseJson(ApiResponse::success(details)))
+}
+
 #[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
 pub struct CreateTaskAttemptBody {
     pub task_id: Uuid,
@@ -540,10 +664,46 @@ async fn handle_task_attempt_diff_ws(
     Ok(())
 }
 
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct CommitInfo {
     pub sha: String,
     pub subject: String,
+}
+
+/// Detailed information about a task attempt, including execution processes and commits
+#[derive(Debug, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct TaskAttemptDetails {
+    /// The task attempt itself
+    pub attempt: TaskAttempt,
+    /// List of execution processes for this attempt
+    pub execution_processes: Vec<ExecutionProcessSummary>,
+    /// Commits made during this attempt (from all completed processes)
+    pub commits: Vec<CommitInfo>,
+    /// Current branch status
+    pub branch_status: Option<BranchStatusSummary>,
+}
+
+/// Summary of an execution process
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct ExecutionProcessSummary {
+    pub id: String,
+    pub status: ExecutionProcessStatus,
+    pub run_reason: ExecutionProcessRunReason,
+    pub exit_code: Option<i64>,
+    pub before_head_commit: Option<String>,
+    pub after_head_commit: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+/// Simplified branch status for attempt details
+#[derive(Debug, Clone, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct BranchStatusSummary {
+    pub commits_ahead: Option<usize>,
+    pub commits_behind: Option<usize>,
+    pub has_uncommitted_changes: Option<bool>,
+    pub head_oid: Option<String>,
+    pub target_branch_name: String,
 }
 
 pub async fn get_commit_info(
@@ -1463,6 +1623,7 @@ pub async fn attach_existing_pr(
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_attempt_id_router = Router::new()
         .route("/", get(get_task_attempt))
+        .route("/details", get(get_task_attempt_details))
         .route("/follow-up", post(follow_up))
         .route(
             "/draft",

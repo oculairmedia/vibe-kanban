@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use executors::executors::BaseCodingAgent;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool, Type};
 use thiserror::Error;
@@ -34,7 +35,7 @@ pub enum TaskAttemptStatus {
     ExecutorFailed,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS, JsonSchema)]
 pub struct TaskAttempt {
     pub id: Uuid,
     pub task_id: Uuid,                 // Foreign key to Task
