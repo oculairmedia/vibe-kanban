@@ -234,6 +234,60 @@ pub struct GetTaskResponse {
     pub task: TaskDetails,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListTaskAttemptsRequest {
+    #[schemars(description = "The ID of the task to list attempts for")]
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TaskAttemptSummary {
+    #[schemars(description = "The unique identifier of the attempt")]
+    pub id: String,
+    #[schemars(description = "The task ID this attempt belongs to")]
+    pub task_id: String,
+    #[schemars(description = "Git branch name for this attempt")]
+    pub branch: String,
+    #[schemars(description = "Target branch for this attempt (PR destination)")]
+    pub target_branch: String,
+    #[schemars(description = "The executor used for this attempt (e.g., CLAUDE_CODE, GEMINI)")]
+    pub executor: String,
+    #[schemars(description = "Path to worktree or container reference")]
+    pub container_ref: Option<String>,
+    #[schemars(description = "Whether the worktree has been deleted")]
+    pub worktree_deleted: bool,
+    #[schemars(description = "When setup script was completed")]
+    pub setup_completed_at: Option<String>,
+    #[schemars(description = "When the attempt was created")]
+    pub created_at: String,
+    #[schemars(description = "When the attempt was last updated")]
+    pub updated_at: String,
+}
+
+impl TaskAttemptSummary {
+    fn from_task_attempt(attempt: TaskAttempt) -> Self {
+        Self {
+            id: attempt.id.to_string(),
+            task_id: attempt.task_id.to_string(),
+            branch: attempt.branch,
+            target_branch: attempt.target_branch,
+            executor: attempt.executor,
+            container_ref: attempt.container_ref,
+            worktree_deleted: attempt.worktree_deleted,
+            setup_completed_at: attempt.setup_completed_at.map(|dt| dt.to_rfc3339()),
+            created_at: attempt.created_at.to_rfc3339(),
+            updated_at: attempt.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListTaskAttemptsResponse {
+    pub attempts: Vec<TaskAttemptSummary>,
+    pub count: usize,
+    pub task_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskServer {
     client: reqwest::Client,
@@ -586,6 +640,33 @@ impl TaskServer {
 
         TaskServer::success(&response)
     }
+
+    #[tool(
+        description = "List all execution attempts for a specific task. Shows what was tried, branch names, executors used, and timestamps. Useful for understanding task history and debugging failed attempts. `task_id` is required!"
+    )]
+    async fn list_task_attempts(
+        &self,
+        Parameters(ListTaskAttemptsRequest { task_id }): Parameters<ListTaskAttemptsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/task-attempts?task_id={}", task_id));
+        let attempts: Vec<TaskAttempt> = match self.send_json(self.client.get(&url)).await {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
+        };
+
+        let attempt_summaries: Vec<TaskAttemptSummary> = attempts
+            .into_iter()
+            .map(TaskAttemptSummary::from_task_attempt)
+            .collect();
+
+        let response = ListTaskAttemptsResponse {
+            count: attempt_summaries.len(),
+            attempts: attempt_summaries,
+            task_id: task_id.to_string(),
+        };
+
+        TaskServer::success(&response)
+    }
 }
 
 #[tool_handler]
@@ -600,7 +681,7 @@ impl ServerHandler for TaskServer {
                 name: "vibe-kanban".to_string(),
                 version: "1.0.0".to_string(),
             },
-            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
+            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
         }
     }
 }
