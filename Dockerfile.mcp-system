@@ -9,7 +9,9 @@ RUN apk add --no-cache \
     pkgconfig \
     perl \
     make \
-    clang-dev
+    clang-dev \
+    cmake \
+    zlib-dev
 
 # Set working directory
 WORKDIR /app
