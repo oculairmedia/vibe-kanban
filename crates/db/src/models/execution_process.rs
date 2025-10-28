@@ -28,7 +28,7 @@ pub enum ExecutionProcessError {
     ValidationError(String),
 }
 
-#[derive(Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS, schemars::JsonSchema)]
 #[sqlx(type_name = "execution_process_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 #[ts(use_ts_enum)]
@@ -39,7 +39,7 @@ pub enum ExecutionProcessStatus {
     Killed,
 }
 
-#[derive(Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Type, Serialize, Deserialize, PartialEq, TS, schemars::JsonSchema)]
 #[sqlx(type_name = "execution_process_run_reason", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionProcessRunReason {

@@ -235,6 +235,7 @@ pub struct GetTaskResponse {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+<<<<<<< HEAD
 pub struct ListTaskAttemptsRequest {
     #[schemars(description = "The ID of the task to list attempts for")]
     pub task_id: Uuid,
@@ -286,6 +287,17 @@ pub struct ListTaskAttemptsResponse {
     pub attempts: Vec<TaskAttemptSummary>,
     pub count: usize,
     pub task_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTaskAttemptDetailsRequest {
+    #[schemars(description = "The ID of the task attempt to retrieve details for")]
+    pub attempt_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetTaskAttemptDetailsResponse {
+    pub attempt_details: crate::routes::task_attempts::TaskAttemptDetails,
 }
 
 #[derive(Debug, Clone)]
@@ -665,6 +677,26 @@ impl TaskServer {
             task_id: task_id.to_string(),
         };
 
+        TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Get detailed information about a specific task attempt, including execution processes, commits, logs, and branch status. Use this to inspect the progress and artifacts of a task attempt. `attempt_id` is required!"
+    )]
+    async fn get_task_attempt_details(
+        &self,
+        Parameters(GetTaskAttemptDetailsRequest { attempt_id }): Parameters<
+            GetTaskAttemptDetailsRequest,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/task-attempts/{}/details", attempt_id));
+        let attempt_details: crate::routes::task_attempts::TaskAttemptDetails =
+            match self.send_json(self.client.get(&url)).await {
+                Ok(details) => details,
+                Err(e) => return Ok(e),
+            };
+
+        let response = GetTaskAttemptDetailsResponse { attempt_details };
         TaskServer::success(&response)
     }
 }
