@@ -30,7 +30,12 @@ async-trait = "0.1"
 command-group = { version = "5.0", features = ["with-tokio"] }
 nix = { version = "0.29", features = ["signal", "process"] }
 openssl-sys = { workspace = true }
-rmcp = { version = "0.5.0", features = ["server", "transport-io"] }
+# TurboMCP - use crates.io versions which are patched to our fork via [patch.crates-io]
+turbomcp = { version = "2.0.0-rc.3", features = ["http", "schemars"] }
+turbomcp-macros = "2.0.0-rc.3"
+turbomcp-protocol = "2.0.0-rc.3"
+turbomcp-server = "2.0.0-rc.3"
+turbomcp-transport = { version = "2.0.0-rc.3", features = ["http"] }
 schemars = { workspace = true }
 regex = "1.11.1"
 toml = "0.8"
@@ -52,4 +57,8 @@ tower = { version = "0.4", features = ["util"] }
 
 [build-dependencies]
 dotenv = "0.15"
+
+[features]
+default = ["http"]
+http = ["turbomcp/http", "turbomcp-transport/http"]
 
