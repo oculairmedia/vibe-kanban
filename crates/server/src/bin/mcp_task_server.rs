@@ -10,8 +10,8 @@ use utils::{
     sentry::{self as sentry_utils, SentrySource, sentry_layer},
 };
 
-#[cfg(feature = "http")]
-use turbomcp::prelude::*;
+// No additional imports needed for HTTP feature
+// The TaskServer already has the run_http_custom method
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

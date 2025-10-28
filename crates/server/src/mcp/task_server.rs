@@ -254,7 +254,7 @@ impl TaskServer {
         if let Some(d) = details {
             error_msg.push_str(&format!(": {}", d));
         }
-        McpError::internal_error(error_msg)
+        McpError::internal(error_msg)
     }
 
     async fn send_json<T: DeserializeOwned>(
@@ -353,7 +353,7 @@ impl TaskServer {
             match TaskStatus::from_str(status_str) {
                 Ok(s) => Some(s),
                 Err(_) => {
-                    return Err(McpError::invalid_params(format!(
+                    return Err(McpError::invalid_request(format!(
                         "Invalid status filter '{}'. Valid values: 'todo', 'in-progress', 'in-review', 'done', 'cancelled'",
                         status_str
                     )));
@@ -399,19 +399,19 @@ impl TaskServer {
     async fn start_task_attempt(&self, request: StartTaskAttemptRequest) -> McpResult<String> {
         let base_branch = request.base_branch.trim().to_string();
         if base_branch.is_empty() {
-            return Err(McpError::invalid_params("Base branch must not be empty."));
+            return Err(McpError::invalid_request("Base branch must not be empty."));
         }
 
         let executor_trimmed = request.executor.trim();
         if executor_trimmed.is_empty() {
-            return Err(McpError::invalid_params("Executor must not be empty."));
+            return Err(McpError::invalid_request("Executor must not be empty."));
         }
 
         let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
         let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
             Ok(exec) => exec,
             Err(_) => {
-                return Err(McpError::invalid_params(format!(
+                return Err(McpError::invalid_request(format!(
                     "Unknown executor '{}'.",
                     executor_trimmed
                 )));
@@ -457,7 +457,7 @@ impl TaskServer {
             match TaskStatus::from_str(status_str) {
                 Ok(s) => Some(s),
                 Err(_) => {
-                    return Err(McpError::invalid_params(format!(
+                    return Err(McpError::invalid_request(format!(
                         "Invalid status '{}'. Valid values: 'todo', 'in-progress', 'in-review', 'done', 'cancelled'",
                         status_str
                     )));
