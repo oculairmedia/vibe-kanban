@@ -30,6 +30,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/sounds/{sound}", get(get_sound))
         .route("/mcp-config", get(get_mcp_servers).post(update_mcp_servers))
         .route("/profiles", get(get_profiles).put(update_profiles))
+        .route("/executor-profiles", get(get_executor_profiles))
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -440,4 +441,69 @@ async fn update_profiles(
             e
         ))),
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct ExecutorProfileInfo {
+    /// The executor type (e.g., "CLAUDE_CODE", "AMP")
+    pub executor: BaseCodingAgent,
+    /// The variant name (e.g., "DEFAULT", "ROUTER")
+    pub variant: String,
+    /// Whether this executor is currently available on the system
+    pub available: bool,
+    /// Capabilities supported by this executor profile
+    pub capabilities: Vec<BaseAgentCapability>,
+    /// Whether this executor supports MCP
+    pub supports_mcp: bool,
+    /// Config path if available
+    pub config_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS, schemars::JsonSchema)]
+pub struct ExecutorProfilesResponse {
+    /// List of all executor profiles
+    pub profiles: Vec<ExecutorProfileInfo>,
+    /// Total count of profiles
+    pub count: usize,
+}
+
+async fn get_executor_profiles(
+    State(_deployment): State<DeploymentImpl>,
+) -> ResponseJson<ApiResponse<ExecutorProfilesResponse>> {
+    let executor_configs = ExecutorConfigs::get_cached();
+    let mut profiles = Vec::new();
+
+    for (executor_key, executor_config) in &executor_configs.executors {
+        for (variant_name, _coding_agent) in &executor_config.configurations {
+            let profile_id = if variant_name == "DEFAULT" {
+                ExecutorProfileId::new(*executor_key)
+            } else {
+                ExecutorProfileId::with_variant(*executor_key, variant_name.clone())
+            };
+
+            if let Some(coding_agent) = executor_configs.get_coding_agent(&profile_id) {
+                let available = coding_agent.check_availability().await;
+                let capabilities = coding_agent.capabilities();
+                let supports_mcp = coding_agent.supports_mcp();
+                let config_path = coding_agent
+                    .default_mcp_config_path()
+                    .map(|p| p.to_string_lossy().to_string());
+
+                profiles.push(ExecutorProfileInfo {
+                    executor: *executor_key,
+                    variant: variant_name.clone(),
+                    available,
+                    capabilities,
+                    supports_mcp,
+                    config_path,
+                });
+            }
+        }
+    }
+
+    let count = profiles.len();
+    ResponseJson(ApiResponse::success(ExecutorProfilesResponse {
+        profiles,
+        count,
+    }))
 }

@@ -523,6 +523,48 @@ impl SystemServer {
         })
     }
 
+    #[tool(description = "List all available executor profiles with their capabilities and availability status")]
+    async fn list_executor_profiles(&self) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/api/executor-profiles");
+
+        let resp = match self
+            .client
+            .get(&url)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return Self::err(format!("Failed to send request: {}", e), None),
+        };
+
+        if !resp.status().is_success() {
+            return Self::err(
+                format!("API returned error status: {}", resp.status()),
+                None,
+            );
+        }
+
+        #[derive(Deserialize)]
+        struct ApiResponse {
+            success: bool,
+            data: Option<crate::routes::config::ExecutorProfilesResponse>,
+        }
+
+        let api_response: ApiResponse = match resp.json().await {
+            Ok(r) => r,
+            Err(e) => return Self::err(format!("Failed to parse response: {}", e), None),
+        };
+
+        if !api_response.success {
+            return Self::err("API returned error", None);
+        }
+
+        match api_response.data {
+            Some(data) => Self::success(&data),
+            None => Self::err("Missing data field in response", None),
+        }
+    }
+
     #[tool(description = "Check if Vibe Kanban is healthy and get version information")]
     async fn health_check(&self) -> Result<CallToolResult, ErrorData> {
         let url = self.url("/api/health");
@@ -560,7 +602,7 @@ impl ServerHandler for SystemServer {
             instructions: Some(
                 "System configuration and discovery tools for Vibe Kanban. \
                 TOOLS: 'get_system_info', 'get_config', 'update_config', 'list_mcp_servers', \
-                'update_mcp_servers', 'list_git_repos', 'list_directory', 'health_check'. \
+                'update_mcp_servers', 'list_executor_profiles', 'list_git_repos', 'list_directory', 'health_check'. \
                 Use these tools to inspect system state, manage configuration, discover resources, \
                 and monitor health."
                     .to_string(),
