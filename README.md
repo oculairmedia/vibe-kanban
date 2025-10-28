@@ -15,6 +15,11 @@
   <a href="https://deepwiki.com/BloopAI/vibe-kanban"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
+<p align="center">
+  <strong>Welcome to Vibe Kanban!</strong> 👋<br/>
+  We're glad you're here. Let's supercharge your AI-powered development workflow.
+</p>
+
 ![](frontend/public/vibe-kanban-screenshot-overview.png)
 
 ## Overview
