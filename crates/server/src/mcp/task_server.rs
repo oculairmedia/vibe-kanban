@@ -585,6 +585,7 @@ pub struct GetAttemptArtifactsResponse {
     pub attempt_id: String,
     pub artifacts: Vec<ArtifactSummary>,
     pub total_count: usize,
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateGitHubPrRequest {
@@ -604,9 +605,10 @@ pub struct CreateGitHubPrResponse {
     pub pr_url: String,
     pub message: String,
     pub attempt_id: String,
+}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-PushAttemptBranchRequest {
+pub struct PushAttemptBranchRequest {
     #[schemars(description = "The ID of the task attempt to push to remote")]
     pub attempt_id: Uuid,
 }
