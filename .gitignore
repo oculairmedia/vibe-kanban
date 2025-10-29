@@ -83,3 +83,8 @@ dev_assets
 .ssh
 
 vibe-kanban-cloud/
+-e 
+# Runtime logs
+backend.log
+mcp-system.log
+mcp-task.log
