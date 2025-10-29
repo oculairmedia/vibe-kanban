@@ -568,6 +568,19 @@ pub struct CreateGitHubPrResponse {
     pub pr_url: String,
     pub message: String,
     pub attempt_id: String,
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+PushAttemptBranchRequest {
+    #[schemars(description = "The ID of the task attempt to push to remote")]
+    pub attempt_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct PushAttemptBranchResponse {
+    pub success: bool,
+    pub message: String,
+    pub attempt_id: String,
+    pub branch: String,
 }
 
 /// Main Vibe Kanban Task MCP Server
@@ -644,7 +657,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'get_attempt_artifacts', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'push_attempt_branch', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -1152,7 +1165,23 @@ impl TaskServer {
     }
 
     #[tool(
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'get_attempt_artifacts', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+        description = "Push a task attempt's branch to the remote GitHub repository. This validates GitHub authentication, ensures the worktree is clean, and pushes all commits to remote. Use this before creating a pull request. `attempt_id` is required!"
+    )]
+    async fn push_attempt_branch(&self, request: PushAttemptBranchRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/task-attempts/{}/push", request.attempt_id));
+
+        // POST to push endpoint returns ApiResponse<()>
+        self.send_json::<serde_json::Value>(self.client.post(&url)).await?;
+
+        // Fetch the task attempt to get branch name for response
+        let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
+        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+
+        let response = PushAttemptBranchResponse {
+            success: true,
+            message: "Branch pushed to remote successfully".to_string(),
+            attempt_id: request.attempt_id.to_string(),
+            branch: attempt.branch,
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
