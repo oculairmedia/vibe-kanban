@@ -438,6 +438,19 @@ pub struct ListExecutionProcessesResponse {
     pub task_attempt_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StopExecutionProcessRequest {
+    #[schemars(description = "The ID of the execution process to stop")]
+    pub process_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct StopExecutionProcessResponse {
+    pub success: bool,
+    pub message: String,
+    pub process_id: String,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -512,7 +525,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -821,6 +834,24 @@ impl TaskServer {
         let process_summary = ExecutionProcessSummary::from_execution_process(process);
         let response = GetExecutionProcessResponse {
             process: process_summary,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Stop a running execution process. This kills the process, updates its status to 'Killed', and sets the parent task to 'InReview' status. `process_id` is required!"
+    )]
+    async fn stop_execution_process(&self, request: StopExecutionProcessRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/execution-processes/{}/stop", request.process_id));
+
+        // POST to stop endpoint returns ApiResponse<()>
+        self.send_json::<serde_json::Value>(self.client.post(&url)).await?;
+
+        let response = StopExecutionProcessResponse {
+            success: true,
+            message: "Execution process stopped successfully".to_string(),
+            process_id: request.process_id.to_string(),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
