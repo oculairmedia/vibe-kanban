@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use db::models::{
+    execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
     project::Project,
     task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     task_attempt::TaskAttempt,
@@ -357,6 +358,76 @@ pub struct MergeTaskAttemptResponse {
     pub message: String,
     pub task_id: String,
     pub attempt_id: String,
+}
+
+// ============================================================================
+// Execution Process Types
+// ============================================================================
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListExecutionProcessesRequest {
+    #[schemars(description = "The ID of the task attempt to list processes for")]
+    pub task_attempt_id: Uuid,
+    #[schemars(description = "Whether to include soft-deleted (dropped) processes")]
+    pub show_soft_deleted: Option<bool>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ExecutionProcessSummary {
+    #[schemars(description = "The unique identifier of the execution process")]
+    pub id: String,
+    #[schemars(description = "The task attempt ID this process belongs to")]
+    pub task_attempt_id: String,
+    #[schemars(description = "Reason for running: 'setupscript', 'cleanupscript', 'codingagent', 'devserver'")]
+    pub run_reason: String,
+    #[schemars(description = "Current status: 'running', 'completed', 'failed', 'killed'")]
+    pub status: String,
+    #[schemars(description = "Exit code if completed")]
+    pub exit_code: Option<i64>,
+    #[schemars(description = "Whether this process is soft-deleted (hidden from timeline)")]
+    pub dropped: bool,
+    #[schemars(description = "When the process started")]
+    pub started_at: String,
+    #[schemars(description = "When the process completed (if finished)")]
+    pub completed_at: Option<String>,
+    #[schemars(description = "Git commit before process started")]
+    pub before_head_commit: Option<String>,
+    #[schemars(description = "Git commit after process ended")]
+    pub after_head_commit: Option<String>,
+}
+
+impl ExecutionProcessSummary {
+    fn from_execution_process(ep: ExecutionProcess) -> Self {
+        Self {
+            id: ep.id.to_string(),
+            task_attempt_id: ep.task_attempt_id.to_string(),
+            run_reason: match ep.run_reason {
+                ExecutionProcessRunReason::SetupScript => "setupscript".to_string(),
+                ExecutionProcessRunReason::CleanupScript => "cleanupscript".to_string(),
+                ExecutionProcessRunReason::CodingAgent => "codingagent".to_string(),
+                ExecutionProcessRunReason::DevServer => "devserver".to_string(),
+            },
+            status: match ep.status {
+                ExecutionProcessStatus::Running => "running".to_string(),
+                ExecutionProcessStatus::Completed => "completed".to_string(),
+                ExecutionProcessStatus::Failed => "failed".to_string(),
+                ExecutionProcessStatus::Killed => "killed".to_string(),
+            },
+            exit_code: ep.exit_code,
+            dropped: ep.dropped,
+            started_at: ep.started_at.to_rfc3339(),
+            completed_at: ep.completed_at.map(|dt| dt.to_rfc3339()),
+            before_head_commit: ep.before_head_commit,
+            after_head_commit: ep.after_head_commit,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListExecutionProcessesResponse {
+    pub processes: Vec<ExecutionProcessSummary>,
+    pub count: usize,
+    pub task_attempt_id: String,
 }
 
 /// Main Vibe Kanban Task MCP Server
@@ -727,6 +798,33 @@ impl TaskServer {
             message: "Task attempt merged successfully".to_string(),
             task_id: attempt.task_id.to_string(),
             attempt_id: request.attempt_id.to_string(),
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "List all execution processes for a specific task attempt. Shows setup scripts, cleanup scripts, coding agent runs, and dev servers. Useful for monitoring what's currently running and debugging process history. `task_attempt_id` is required!"
+    )]
+    async fn list_execution_processes(&self, request: ListExecutionProcessesRequest) -> McpResult<String> {
+        let show_deleted = request.show_soft_deleted.unwrap_or(false);
+        let url = self.url(&format!(
+            "/api/processes?task_attempt_id={}&show_soft_deleted={}",
+            request.task_attempt_id,
+            show_deleted
+        ));
+
+        let processes: Vec<ExecutionProcess> = self.send_json(self.client.get(&url)).await?;
+
+        let process_summaries: Vec<ExecutionProcessSummary> = processes
+            .into_iter()
+            .map(ExecutionProcessSummary::from_execution_process)
+            .collect();
+
+        let response = ListExecutionProcessesResponse {
+            count: process_summaries.len(),
+            processes: process_summaries,
+            task_attempt_id: request.task_attempt_id.to_string(),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())

@@ -60,6 +60,7 @@ tower = { version = "0.4", features = ["util"] }
 dotenv = "0.15"
 
 [features]
-default = ["http"]
+default = ["http", "schemars"]
 http = ["turbomcp/http", "turbomcp-transport/http"]
+schemars = ["turbomcp/schemars"]
 
