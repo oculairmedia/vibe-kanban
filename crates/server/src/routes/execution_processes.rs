@@ -215,8 +215,7 @@ pub async fn get_raw_logs(
 
     // Fetch logs from database
     let logs = ExecutionProcessLogs::find_by_execution_id(pool, execution_process.id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
+        .await?
         .ok_or_else(|| {
             ApiError::ExecutionProcess(ExecutionProcessError::ExecutionProcessNotFound)
         })?;
@@ -224,7 +223,7 @@ pub async fn get_raw_logs(
     // Parse JSONL logs into Vec<LogMsg>
     let parsed_logs = logs
         .parse_logs()
-        .map_err(|e| ApiError::InternalServerError(format!("Failed to parse logs: {}", e)))?;
+        .map_err(|e| ApiError::Database(sqlx::Error::Decode(Box::new(e))))?;
 
     let response = RawLogsResponse {
         execution_id: logs.execution_id,
