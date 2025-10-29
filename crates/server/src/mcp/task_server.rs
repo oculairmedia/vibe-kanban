@@ -995,6 +995,17 @@ impl TaskServer {
     }
 
 
+    // ============================================================================
+    // TEMPORARILY DISABLED - Waiting for API endpoint deployment
+    // ============================================================================
+    // The following tool requires the `/api/task-attempts/{id}/artifacts` endpoint
+    // which is implemented in the codebase but not yet deployed to the NPM package.
+    // The endpoint was added in commit 246958b but needs to be published.
+    // 
+    // To re-enable: Uncomment this tool once the NPM package is updated with the
+    // new API routes (requires project maintainer to publish a new release).
+    // ============================================================================
+    /*
     #[tool(
         description = "Get all artifacts (git diffs, commits, execution logs) for a task attempt. Returns work products from execution processes including code changes, commit messages, and process outputs. Useful for reviewing what work was done during an attempt. `attempt_id` is required!"
     )]
@@ -1064,7 +1075,17 @@ impl TaskServer {
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
+    */
 
+    // ============================================================================
+    // TEMPORARILY DISABLED - Waiting for API endpoint deployment
+    // ============================================================================
+    // This tool uses the `/api/task-attempts/{id}/pr` endpoint which exists in
+    // codebase (commit fd98a7d) but is not deployed to the published NPM package.
+    // 
+    // To re-enable: Uncomment once NPM package includes the new routes.
+    // ============================================================================
+    /*
     #[tool(
         description = "Create a GitHub pull request for a completed task attempt. The PR will be created from the attempt's branch to the target branch, with the task details included in the PR description. Returns the PR URL on success. `attempt_id` and `title` are required!"
     )]
@@ -1096,7 +1117,17 @@ impl TaskServer {
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
+    */
 
+    // ============================================================================
+    // TEMPORARILY DISABLED - Waiting for API endpoint deployment
+    // ============================================================================
+    // This tool uses the `/api/task-attempts/{id}/rebase` endpoint which exists
+    // in the codebase (commit 10b13fe) but not in the published NPM package yet.
+    // 
+    // To re-enable: Uncomment once NPM package includes the new routes.
+    // ============================================================================
+    /*
     #[tool(
         description = "Rebase a task attempt branch onto the latest target branch. This updates the attempt with the latest changes from the target branch. Detects and reports any merge conflicts that need manual resolution. Use the `old_base_branch` and `new_base_branch` parameters to rebase onto a different branch. `attempt_id` is required!"
     )]
@@ -1170,6 +1201,7 @@ impl TaskServer {
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
+    */
 
     #[tool(
         description = "Get detailed information about a specific execution process including status, exit code, runtime metrics, and git commit information. `process_id` is required!"
@@ -1379,6 +1411,15 @@ impl TaskServer {
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
+    // ============================================================================
+    // TEMPORARILY DISABLED - Waiting for API endpoint deployment
+    // ============================================================================
+    // This tool uses the `/api/task-attempts/{id}/push` endpoint which exists
+    // in the codebase (commit 4958cac) but not in the published NPM package yet.
+    // 
+    // To re-enable: Uncomment once NPM package includes the new routes.
+    // ============================================================================
+    /*
     #[tool(
         description = "Push a task attempt's branch to the remote GitHub repository. This validates GitHub authentication, ensures the worktree is clean, and pushes all commits to remote. Use this before creating a pull request. `attempt_id` is required!"
     )]
@@ -1401,6 +1442,7 @@ impl TaskServer {
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
+    */
 }
 
 // Custom HTTP runner implementation with permissive security for development
