@@ -783,6 +783,44 @@ pub struct GetAttemptCommitsResponse {
     pub total_count: usize,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CompareCommitToHeadRequest {
+    #[schemars(description = "The ID of the task attempt")]
+    pub attempt_id: Uuid,
+    #[schemars(description = "The commit SHA to compare against")]
+    pub commit_sha: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CompareCommitToHeadResponse {
+    #[schemars(description = "Current HEAD commit SHA")]
+    pub head_oid: String,
+    #[schemars(description = "Target commit SHA being compared")]
+    pub target_oid: String,
+    #[schemars(description = "Number of commits HEAD is ahead of target")]
+    pub ahead_from_head: usize,
+    #[schemars(description = "Number of commits HEAD is behind target")]
+    pub behind_from_head: usize,
+    #[schemars(description = "Whether the history is linear (can fast-forward)")]
+    pub is_linear: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AbortConflictsRequest {
+    #[schemars(description = "The ID of the task attempt with conflicts to abort")]
+    pub attempt_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AbortConflictsResponse {
+    #[schemars(description = "Whether the operation succeeded")]
+    pub success: bool,
+    #[schemars(description = "Status message")]
+    pub message: String,
+    #[schemars(description = "The attempt ID")]
+    pub attempt_id: String,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -857,7 +895,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'get_branch_status', 'get_attempt_commits', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'push_attempt_branch', 'rebase_task_attempt', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'get_branch_status', 'get_attempt_commits', 'compare_commit_to_head', 'abort_conflicts', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'push_attempt_branch', 'rebase_task_attempt', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -1689,6 +1727,56 @@ impl TaskServer {
             attempt_id: api_response.attempt_id,
             commits,
             total_count: api_response.total_count,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Compare a commit SHA to the current HEAD of an attempt branch. Returns how many commits ahead and behind, and whether the history is linear. Useful for understanding if a commit can be fast-forwarded or needs rebasing. `attempt_id` and `commit_sha` are required!"
+    )]
+    async fn compare_commit_to_head(&self, request: CompareCommitToHeadRequest) -> McpResult<String> {
+        let url = self.url(&format!(
+            "/api/task-attempts/{}/commit-compare?sha={}",
+            request.attempt_id, request.commit_sha
+        ));
+
+        // Define local response type matching the API
+        #[derive(Debug, Deserialize)]
+        struct ApiCompareResult {
+            head_oid: String,
+            target_oid: String,
+            ahead_from_head: usize,
+            behind_from_head: usize,
+            is_linear: bool,
+        }
+
+        let api_response: ApiCompareResult = self.send_json(self.client.get(&url)).await?;
+
+        let response = CompareCommitToHeadResponse {
+            head_oid: api_response.head_oid,
+            target_oid: api_response.target_oid,
+            ahead_from_head: api_response.ahead_from_head,
+            behind_from_head: api_response.behind_from_head,
+            is_linear: api_response.is_linear,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Abort an ongoing merge or rebase operation on an attempt branch. This restores the worktree to a clean state by aborting any conflicts. Use this when you want to cancel a conflicted merge/rebase operation. `attempt_id` is required!"
+    )]
+    async fn abort_conflicts(&self, request: AbortConflictsRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/task-attempts/{}/conflicts/abort", request.attempt_id));
+
+        // POST to abort endpoint returns ApiResponse<()>
+        self.send_json::<serde_json::Value>(self.client.post(&url)).await?;
+
+        let response = AbortConflictsResponse {
+            success: true,
+            message: "Successfully aborted conflicts and restored clean state".to_string(),
+            attempt_id: request.attempt_id.to_string(),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
