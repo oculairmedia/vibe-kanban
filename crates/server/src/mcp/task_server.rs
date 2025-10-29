@@ -922,7 +922,7 @@ impl TaskServer {
         description = "List all execution processes for a task attempt. Returns process history with status, runtime metrics, and git commits. Optionally include soft-deleted processes. `task_attempt_id` is required!"
     )]
     async fn list_execution_processes(&self, request: ListExecutionProcessesRequest) -> McpResult<String> {
-        let mut url = self.url("/api/processes");
+        let mut url = self.url("/api/execution-processes");
         let params = format!("?task_attempt_id={}", request.task_attempt_id);
         url.push_str(&params);
         
