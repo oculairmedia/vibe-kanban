@@ -11,7 +11,11 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
 use uuid::Uuid;
 
-use crate::routes::task_attempts::CreateTaskAttemptBody;
+use crate::routes::task_attempts::{
+    CreateTaskAttemptBody,
+    RebaseTaskAttemptRequest as ApiRebaseRequest,
+    GitOperationError,
+};
 
 // Minimal copy of ExecutorProfileId to avoid depending on executors crate
 // which has codex-protocol compilation issues
@@ -360,6 +364,38 @@ pub struct MergeTaskAttemptResponse {
     pub attempt_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RebaseTaskAttemptRequest {
+    #[schemars(description = "The ID of the task attempt to rebase")]
+    pub attempt_id: Uuid,
+    #[schemars(description = "Optional old base branch (defaults to attempt's target branch)")]
+    pub old_base_branch: Option<String>,
+    #[schemars(description = "Optional new base branch (defaults to attempt's target branch)")]
+    pub new_base_branch: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RebaseTaskAttemptResponse {
+    pub success: bool,
+    pub message: String,
+    pub task_id: String,
+    pub attempt_id: String,
+    #[schemars(description = "True if there are merge conflicts that need to be resolved")]
+    pub has_conflicts: bool,
+    #[schemars(description = "Conflict details if present")]
+    pub conflict_info: Option<ConflictInfo>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ConflictInfo {
+    #[schemars(description = "Type of conflict operation (Rebase, Merge, CherryPick, Revert)")]
+    pub operation: String,
+    #[schemars(description = "Human-readable conflict message")]
+    pub message: String,
+    #[schemars(description = "List of files with conflicts")]
+    pub conflicted_files: Vec<String>,
+}
+
 // ============================================================================
 // Execution Process Types
 // ============================================================================
@@ -657,7 +693,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'push_attempt_branch', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'push_attempt_branch', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'push_attempt_branch', 'rebase_task_attempt', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -951,6 +987,80 @@ impl TaskServer {
             message: "Task attempt merged successfully".to_string(),
             task_id: attempt.task_id.to_string(),
             attempt_id: request.attempt_id.to_string(),
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Rebase a task attempt branch onto the latest target branch. This updates the attempt with the latest changes from the target branch. Detects and reports any merge conflicts that need manual resolution. Use the `old_base_branch` and `new_base_branch` parameters to rebase onto a different branch. `attempt_id` is required!"
+    )]
+    async fn rebase_task_attempt(&self, request: RebaseTaskAttemptRequest) -> McpResult<String> {
+        // Prepare the rebase payload
+        let payload = ApiRebaseRequest {
+            old_base_branch: request.old_base_branch,
+            new_base_branch: request.new_base_branch,
+        };
+
+        let url = self.url(&format!("/api/task-attempts/{}/rebase", request.attempt_id));
+
+        // Define response structure that matches the API's error-with-data pattern
+        #[derive(Debug, Deserialize)]
+        struct ApiRebaseResponse {
+            success: bool,
+            data: Option<GitOperationError>,
+            message: Option<String>,
+        }
+
+        // Make the rebase request
+        let resp = self.client.post(&url).json(&payload).send().await
+            .map_err(|e| Self::err_str("Failed to connect to VK API", Some(&e.to_string())))?;
+
+        let status_code = resp.status();
+        let api_response = resp.json::<ApiRebaseResponse>().await
+            .map_err(|e| Self::err_str("Failed to parse VK API response", Some(&e.to_string())))?;
+
+        // Fetch the task attempt to get task_id for response
+        let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
+        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+
+        // Check if rebase succeeded or encountered conflicts
+        let (success, has_conflicts, conflict_info, message) = if status_code.is_success() && api_response.success {
+            // Rebase succeeded
+            (true, false, None, "Task attempt rebased successfully".to_string())
+        } else if let Some(git_error) = api_response.data {
+            // Rebase encountered conflicts or other git errors
+            match git_error {
+                GitOperationError::MergeConflicts { message: conflict_msg, op } => {
+                    let operation = format!("{:?}", op);
+                    let conflict_info = ConflictInfo {
+                        operation,
+                        message: conflict_msg.clone(),
+                        conflicted_files: vec![], // API doesn't return files directly in rebase response
+                    };
+                    (false, true, Some(conflict_info), conflict_msg)
+                }
+                GitOperationError::RebaseInProgress => {
+                    (false, true, Some(ConflictInfo {
+                        operation: "Rebase".to_string(),
+                        message: "A rebase is already in progress. Please complete or abort the current rebase first.".to_string(),
+                        conflicted_files: vec![],
+                    }), "Rebase already in progress".to_string())
+                }
+            }
+        } else {
+            // Unknown error
+            let msg = api_response.message.unwrap_or_else(|| "Unknown error during rebase".to_string());
+            return Err(Self::err_str("Rebase failed", Some(&msg)));
+        };
+
+        let response = RebaseTaskAttemptResponse {
+            success,
+            message,
+            task_id: attempt.task_id.to_string(),
+            attempt_id: request.attempt_id.to_string(),
+            has_conflicts,
+            conflict_info,
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
