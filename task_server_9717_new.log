@@ -1,0 +1,26 @@
+[2m2025-10-29T14:15:16.242272Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ╔══════════════════════════════════════╗
+[2m2025-10-29T14:15:16.242422Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ║  Vibe Kanban MCP Server (TurboMCP)  ║
+[2m2025-10-29T14:15:16.242458Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ╚══════════════════════════════════════╝
+[2m2025-10-29T14:15:16.242497Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Version: 0.0.111
+[2m2025-10-29T14:15:16.242527Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Using backend URL from VIBE_BACKEND_URL: http://127.0.0.1:3105
+[2m2025-10-29T14:15:16.242560Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Transport: http
+[2m2025-10-29T14:15:16.242587Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Backend API: http://127.0.0.1:3105
+[2m2025-10-29T14:15:16.254105Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 🚀 Starting HTTP transport
+[2m2025-10-29T14:15:16.254285Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 📡 Listening on: http://0.0.0.0:9717
+[2m2025-10-29T14:15:16.254335Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 🔗 Endpoint: http://0.0.0.0:9717/mcp
+[2m2025-10-29T14:15:16.254375Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ⚠️  CORS: Allowing all origins (development mode)
+[2m2025-10-29T14:15:16.254411Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Ready for MCP client connections
+[2m2025-10-29T14:15:16.254996Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m 🚀 MCP 2025-06-18 Compliant Streamable HTTP Transport Ready
+[2m2025-10-29T14:15:16.255049Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Server: vibe-kanban v1.0.0
+[2m2025-10-29T14:15:16.255086Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Listening: 0.0.0.0:9717
+[2m2025-10-29T14:15:16.255144Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Endpoint: /mcp (GET/POST/DELETE)
+[2m2025-10-29T14:15:16.255178Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Security: Origin validation, rate limiting, IP binding
+[2m2025-10-29T14:15:16.255210Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Features: SSE streaming, message replay, session management
+[2m2025-10-29T14:17:29.917038Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32603 for variant: Discriminant(14)
+[2m2025-10-29T14:17:38.797736Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32603 for variant: Discriminant(14)
+[2m2025-10-29T14:20:55.917104Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32603 for variant: Discriminant(14)
+[2m2025-10-29T15:26:40.983647Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32002 for variant: Discriminant(3)
+[2m2025-10-29T15:26:41.564945Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32002 for variant: Discriminant(3)
+[2m2025-10-29T15:26:44.618497Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32002 for variant: Discriminant(3)
+[2m2025-10-29T15:26:44.668105Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32002 for variant: Discriminant(3)
+[2m2025-10-29T15:28:04.354091Z[0m [32m INFO[0m [2mturbomcp_server::error[0m[2m:[0m 🔍 [ServerError::error_code] Returning code: -32603 for variant: Discriminant(14)

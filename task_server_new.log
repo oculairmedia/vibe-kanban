@@ -1,0 +1,14 @@
+[2m2025-10-29T13:19:25.253678Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ╔══════════════════════════════════════╗
+[2m2025-10-29T13:19:25.253850Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ║  Vibe Kanban MCP Server (TurboMCP)  ║
+[2m2025-10-29T13:19:25.253895Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ╚══════════════════════════════════════╝
+[2m2025-10-29T13:19:25.253956Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Version: 0.0.111
+[2m2025-10-29T13:19:25.254546Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Using port from port file: 3105
+[2m2025-10-29T13:19:25.254601Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Using backend URL: http://127.0.0.1:3105
+[2m2025-10-29T13:19:25.254640Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Transport: http
+[2m2025-10-29T13:19:25.254685Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Backend API: http://127.0.0.1:3105
+[2m2025-10-29T13:19:25.265537Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 🚀 Starting HTTP transport
+[2m2025-10-29T13:19:25.265667Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 📡 Listening on: http://0.0.0.0:3456
+[2m2025-10-29T13:19:25.265697Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m 🔗 Endpoint: http://0.0.0.0:3456/mcp
+[2m2025-10-29T13:19:25.265734Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m ⚠️  CORS: Allowing all origins (development mode)
+[2m2025-10-29T13:19:25.265782Z[0m [32m INFO[0m [2mmcp_task_server[0m[2m:[0m Ready for MCP client connections
+Error: Os { code: 98, kind: AddrInUse, message: "Address already in use" }

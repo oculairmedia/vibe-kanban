@@ -1,0 +1,19 @@
+[2m2025-10-29T05:17:48.107253Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m ╔══════════════════════════════════════════╗
+[2m2025-10-29T05:17:48.107467Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m ║  Vibe Kanban MCP System (TurboMCP)     ║
+[2m2025-10-29T05:17:48.107509Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m ╚══════════════════════════════════════════╝
+[2m2025-10-29T05:17:48.107539Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Version: 0.0.111
+[2m2025-10-29T05:17:48.108108Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Using port from port file: 3105
+[2m2025-10-29T05:17:48.108259Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Using backend URL: http://127.0.0.1:3105
+[2m2025-10-29T05:17:48.108292Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Transport: http
+[2m2025-10-29T05:17:48.108328Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Backend API: http://127.0.0.1:3105
+[2m2025-10-29T05:17:48.118462Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m 🚀 Starting HTTP transport
+[2m2025-10-29T05:17:48.118547Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m 📡 Listening on: http://0.0.0.0:9718
+[2m2025-10-29T05:17:48.118592Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m 🔗 Endpoint: http://0.0.0.0:9718/mcp
+[2m2025-10-29T05:17:48.118640Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m ⚠️  CORS: Allowing all origins (development mode)
+[2m2025-10-29T05:17:48.118684Z[0m [32m INFO[0m [2mmcp_system_server[0m[2m:[0m Ready for MCP client connections
+[2m2025-10-29T05:17:48.119210Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m 🚀 MCP 2025-06-18 Compliant Streamable HTTP Transport Ready
+[2m2025-10-29T05:17:48.119254Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Server: vibe-kanban-system v1.0.0
+[2m2025-10-29T05:17:48.119288Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Listening: 0.0.0.0:9718
+[2m2025-10-29T05:17:48.119324Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Endpoint: /mcp (GET/POST/DELETE)
+[2m2025-10-29T05:17:48.119352Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Security: Origin validation, rate limiting, IP binding
+[2m2025-10-29T05:17:48.119378Z[0m [32m INFO[0m [2mturbomcp_transport::streamable_http_v2[0m[2m:[0m    Features: SSE streaming, message replay, session management

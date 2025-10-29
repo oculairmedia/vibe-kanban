@@ -622,135 +622,6 @@ pub struct PushAttemptBranchResponse {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetBranchStatusRequest {
-    #[schemars(description = "The ID of the task attempt to get branch status for")]
-    pub attempt_id: Uuid,
-}
-
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct GetBranchStatusResponse {
-    #[schemars(description = "The task attempt ID")]
-    pub attempt_id: String,
-    #[schemars(description = "The target branch this attempt will merge into")]
-    pub target_branch: String,
-    #[schemars(description = "Number of commits this branch is ahead of target")]
-    pub commits_ahead: Option<usize>,
-    #[schemars(description = "Number of commits this branch is behind target")]
-    pub commits_behind: Option<usize>,
-    #[schemars(description = "Overall sync status summary (UpToDate, Ahead, Behind, Diverged, HasConflicts, etc.)")]
-    pub sync_status: String,
-    #[schemars(description = "Whether there are uncommitted changes in the worktree")]
-    pub has_uncommitted_changes: Option<bool>,
-    #[schemars(description = "Number of uncommitted file changes")]
-    pub uncommitted_count: Option<usize>,
-    #[schemars(description = "Number of untracked files")]
-    pub untracked_count: Option<usize>,
-    #[schemars(description = "Current HEAD commit SHA")]
-    pub head_commit: Option<String>,
-    #[schemars(description = "Commits ahead of remote (only if PR is open)")]
-    pub remote_commits_ahead: Option<usize>,
-    #[schemars(description = "Commits behind remote (only if PR is open)")]
-    pub remote_commits_behind: Option<usize>,
-    #[schemars(description = "Whether a rebase operation is in progress")]
-    pub is_rebase_in_progress: bool,
-    #[schemars(description = "Whether there are merge conflicts")]
-    pub has_conflicts: bool,
-    #[schemars(description = "Type of operation that caused conflicts (if any)")]
-    pub conflict_operation: Option<String>,
-    #[schemars(description = "List of files with conflicts (if any)")]
-    pub conflicted_files: Option<Vec<String>>,
-    #[schemars(description = "Suggested actions based on current status")]
-    pub suggested_actions: Vec<String>,
-}
-
-/// Determine the overall sync status based on branch state
-fn determine_sync_status(
-    commits_ahead: Option<usize>,
-    commits_behind: Option<usize>,
-    has_uncommitted: Option<bool>,
-    is_rebasing: bool,
-    has_conflicts: bool,
-) -> String {
-    if has_conflicts {
-        return "HasConflicts".to_string();
-    }
-
-    if is_rebasing {
-        return "RebaseInProgress".to_string();
-    }
-
-    let ahead = commits_ahead.unwrap_or(0);
-    let behind = commits_behind.unwrap_or(0);
-    let dirty = has_uncommitted.unwrap_or(false);
-
-    match (ahead, behind, dirty) {
-        (0, 0, false) => "UpToDate".to_string(),
-        (0, 0, true) => "UpToDateWithUncommittedChanges".to_string(),
-        (a, 0, false) if a > 0 => "Ahead".to_string(),
-        (a, 0, true) if a > 0 => "AheadWithUncommittedChanges".to_string(),
-        (0, b, false) if b > 0 => "Behind".to_string(),
-        (0, b, true) if b > 0 => "BehindWithUncommittedChanges".to_string(),
-        (a, b, false) if a > 0 && b > 0 => "Diverged".to_string(),
-        (a, b, true) if a > 0 && b > 0 => "DivergedWithUncommittedChanges".to_string(),
-        _ => "Unknown".to_string(),
-    }
-}
-
-/// Suggest actions based on branch status
-fn suggest_actions(
-    commits_ahead: Option<usize>,
-    commits_behind: Option<usize>,
-    has_uncommitted: Option<bool>,
-    is_rebasing: bool,
-    has_conflicts: bool,
-    remote_behind: Option<usize>,
-) -> Vec<String> {
-    let mut actions = Vec::new();
-
-    if has_conflicts {
-        actions.push("Resolve conflicts in the conflicted files".to_string());
-        actions.push("Use 'abort_conflicts_task_attempt' to abort the operation if needed".to_string());
-        return actions;
-    }
-
-    if is_rebasing {
-        actions.push("Complete or abort the rebase operation in progress".to_string());
-        return actions;
-    }
-
-    let ahead = commits_ahead.unwrap_or(0);
-    let behind = commits_behind.unwrap_or(0);
-    let dirty = has_uncommitted.unwrap_or(false);
-
-    if dirty {
-        actions.push("Commit or stash uncommitted changes".to_string());
-    }
-
-    if behind > 0 {
-        actions.push(format!("Rebase onto target branch to sync {} commit(s)", behind));
-        actions.push("Use 'rebase_task_attempt' tool to update your branch".to_string());
-    }
-
-    if ahead > 0 && behind == 0 && !dirty {
-        if remote_behind.unwrap_or(0) > 0 {
-            actions.push("Push changes to remote using 'push_attempt_branch'".to_string());
-        }
-        actions.push("Branch is ready to merge or create a PR".to_string());
-        actions.push("Use 'create_github_pr' to create a pull request".to_string());
-    }
-
-    if ahead == 0 && behind == 0 && !dirty {
-        actions.push("Branch is up to date with target".to_string());
-    }
-
-    if actions.is_empty() {
-        actions.push("No immediate actions needed".to_string());
-    }
-
-    actions
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetAttemptCommitsRequest {
     #[schemars(description = "The ID of the task attempt to get commits for")]
     pub attempt_id: Uuid,
@@ -857,7 +728,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'get_branch_status', 'get_attempt_commits', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'push_attempt_branch', 'rebase_task_attempt', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'push_attempt_branch', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server', 'create_github_pr', 'push_attempt_branch', 'rebase_task_attempt', 'get_attempt_artifacts'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -1568,74 +1439,6 @@ impl TaskServer {
             success: true,
             message: "Development server started successfully".to_string(),
             attempt_id: request.attempt_id.to_string(),
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
-
-    #[tool(
-        description = "Get the git branch synchronization status for a task attempt. Shows how many commits the attempt branch is ahead/behind the target branch, uncommitted changes, conflict status, and remote sync information if a PR is open. Useful for understanding if a branch needs rebasing or is ready to merge. `attempt_id` is required!"
-    )]
-    async fn get_branch_status(&self, request: GetBranchStatusRequest) -> McpResult<String> {
-        let url = self.url(&format!("/api/task-attempts/{}/branch-status", request.attempt_id));
-
-        // Define local response type matching the API
-        #[derive(Debug, Deserialize)]
-        struct ApiBranchStatus {
-            commits_behind: Option<usize>,
-            commits_ahead: Option<usize>,
-            has_uncommitted_changes: Option<bool>,
-            head_oid: Option<String>,
-            uncommitted_count: Option<usize>,
-            untracked_count: Option<usize>,
-            target_branch_name: String,
-            remote_commits_behind: Option<usize>,
-            remote_commits_ahead: Option<usize>,
-            is_rebase_in_progress: bool,
-            conflict_op: Option<String>,
-            conflicted_files: Vec<String>,
-        }
-
-        let api_response: ApiBranchStatus = self.send_json(self.client.get(&url)).await?;
-
-        // Check conflict status before moving conflicted_files
-        let has_conflicts = !api_response.conflicted_files.is_empty();
-
-        // Convert to MCP response format
-        let response = GetBranchStatusResponse {
-            attempt_id: request.attempt_id.to_string(),
-            target_branch: api_response.target_branch_name,
-            commits_ahead: api_response.commits_ahead,
-            commits_behind: api_response.commits_behind,
-            sync_status: determine_sync_status(
-                api_response.commits_ahead,
-                api_response.commits_behind,
-                api_response.has_uncommitted_changes,
-                api_response.is_rebase_in_progress,
-                has_conflicts,
-            ),
-            has_uncommitted_changes: api_response.has_uncommitted_changes,
-            uncommitted_count: api_response.uncommitted_count,
-            untracked_count: api_response.untracked_count,
-            head_commit: api_response.head_oid,
-            remote_commits_ahead: api_response.remote_commits_ahead,
-            remote_commits_behind: api_response.remote_commits_behind,
-            is_rebase_in_progress: api_response.is_rebase_in_progress,
-            has_conflicts,
-            conflict_operation: api_response.conflict_op,
-            conflicted_files: if api_response.conflicted_files.is_empty() {
-                None
-            } else {
-                Some(api_response.conflicted_files)
-            },
-            suggested_actions: suggest_actions(
-                api_response.commits_ahead,
-                api_response.commits_behind,
-                api_response.has_uncommitted_changes,
-                api_response.is_rebase_in_progress,
-                has_conflicts,
-                api_response.remote_commits_behind,
-            ),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
