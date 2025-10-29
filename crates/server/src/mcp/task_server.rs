@@ -451,6 +451,29 @@ pub struct StopExecutionProcessResponse {
     pub process_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetProcessRawLogsRequest {
+    #[schemars(description = "The ID of the execution process to retrieve logs for")]
+    pub process_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LogMessage {
+    #[schemars(description = "Type of log message (Stdout, Stderr, JsonPatch, SessionId, Finished, Unknown, Raw)")]
+    pub msg_type: String,
+    #[schemars(description = "Content of the log message")]
+    pub content: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetProcessRawLogsResponse {
+    pub process_id: String,
+    pub logs: Vec<LogMessage>,
+    pub byte_size: i64,
+    pub log_count: usize,
+    pub inserted_at: String,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -525,7 +548,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -880,6 +903,83 @@ impl TaskServer {
             count: process_summaries.len(),
             task_attempt_id: request.task_attempt_id.to_string(),
             processes: process_summaries,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Get the raw stdout/stderr logs for an execution process. Returns all log messages including stdout, stderr, and process state. Useful for debugging task execution and understanding what happened during a run. `process_id` is required!"
+    )]
+    async fn get_process_raw_logs(&self, request: GetProcessRawLogsRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/execution-processes/{}/logs", request.process_id));
+
+        // Define a minimal response structure matching the API endpoint
+        #[derive(Debug, Deserialize)]
+        struct RawLogsApiResponse {
+            execution_id: Uuid,
+            logs: Vec<serde_json::Value>, // LogMsg deserialized as raw JSON
+            byte_size: i64,
+            inserted_at: String,
+        }
+
+        let api_response: RawLogsApiResponse = self.send_json(self.client.get(&url)).await?;
+
+        // Convert raw JSON log messages to structured LogMessage format
+        let mut log_messages = Vec::new();
+        for log_value in &api_response.logs {
+            let log_msg = match log_value {
+                serde_json::Value::Object(map) => {
+                    if let Some(stdout) = map.get("Stdout") {
+                        LogMessage {
+                            msg_type: "Stdout".to_string(),
+                            content: stdout.clone(),
+                        }
+                    } else if let Some(stderr) = map.get("Stderr") {
+                        LogMessage {
+                            msg_type: "Stderr".to_string(),
+                            content: stderr.clone(),
+                        }
+                    } else if let Some(json_patch) = map.get("JsonPatch") {
+                        LogMessage {
+                            msg_type: "JsonPatch".to_string(),
+                            content: json_patch.clone(),
+                        }
+                    } else if let Some(session_id) = map.get("SessionId") {
+                        LogMessage {
+                            msg_type: "SessionId".to_string(),
+                            content: session_id.clone(),
+                        }
+                    } else if map.contains_key("Finished") {
+                        LogMessage {
+                            msg_type: "Finished".to_string(),
+                            content: serde_json::Value::Null,
+                        }
+                    } else {
+                        // Unknown log type - include as-is
+                        LogMessage {
+                            msg_type: "Unknown".to_string(),
+                            content: log_value.clone(),
+                        }
+                    }
+                }
+                _ => {
+                    // Non-object log entry
+                    LogMessage {
+                        msg_type: "Raw".to_string(),
+                        content: log_value.clone(),
+                    }
+                }
+            };
+            log_messages.push(log_msg);
+        }
+
+        let response = GetProcessRawLogsResponse {
+            process_id: api_response.execution_id.to_string(),
+            logs: log_messages,
+            byte_size: api_response.byte_size,
+            log_count: api_response.logs.len(),
+            inserted_at: api_response.inserted_at,
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())

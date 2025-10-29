@@ -12,9 +12,10 @@ use axum::{
 use db::models::execution_process::{
     ExecutionProcess, ExecutionProcessError, ExecutionProcessStatus,
 };
+use db::models::execution_process_logs::ExecutionProcessLogs;
 use deployment::Deployment;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use services::services::container::ContainerService;
 use utils::{log_msg::LogMsg, response::ApiResponse};
 use uuid::Uuid;
@@ -180,6 +181,46 @@ async fn handle_normalized_logs_ws(
     Ok(())
 }
 
+/// Response structure for raw logs endpoint
+#[derive(Debug, Serialize)]
+pub struct RawLogsResponse {
+    pub execution_id: Uuid,
+    pub logs: Vec<LogMsg>,
+    pub byte_size: i64,
+    pub inserted_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// GET /api/execution-processes/{id}/logs
+/// Returns the raw logs for an execution process as a JSON array of LogMsg
+pub async fn get_raw_logs(
+    Extension(execution_process): Extension<ExecutionProcess>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<RawLogsResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Fetch logs from database
+    let logs = ExecutionProcessLogs::find_by_execution_id(pool, execution_process.id)
+        .await
+        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
+        .ok_or_else(|| {
+            ApiError::ExecutionProcess(ExecutionProcessError::ExecutionProcessNotFound)
+        })?;
+
+    // Parse JSONL logs into Vec<LogMsg>
+    let parsed_logs = logs
+        .parse_logs()
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to parse logs: {}", e)))?;
+
+    let response = RawLogsResponse {
+        execution_id: logs.execution_id,
+        logs: parsed_logs,
+        byte_size: logs.byte_size,
+        inserted_at: logs.inserted_at,
+    };
+
+    Ok(ResponseJson(ApiResponse::success(response)))
+}
+
 pub async fn stop_execution_process(
     Extension(execution_process): Extension<ExecutionProcess>,
     State(deployment): State<DeploymentImpl>,
@@ -251,6 +292,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_attempt_id_router = Router::new()
         .route("/", get(get_execution_process_by_id))
         .route("/stop", post(stop_execution_process))
+        .route("/logs", get(get_raw_logs))
         .route("/raw-logs/ws", get(stream_raw_logs_ws))
         .route("/normalized-logs/ws", get(stream_normalized_logs_ws))
         .layer(from_fn_with_state(
