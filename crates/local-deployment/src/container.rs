@@ -809,6 +809,7 @@ impl ContainerService for LocalContainerService {
 
         let approvals_service: Arc<dyn ExecutorApprovalService> =
             match executor_action.base_executor() {
+                #[cfg(feature = "codex")]
                 Some(BaseCodingAgent::Codex) => ExecutorApprovalBridge::new(
                     self.approvals.clone(),
                     self.db.clone(),

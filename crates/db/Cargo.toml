@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 utils = { path = "../utils" }
-executors = { path = "../executors" }
+executors = { path = "../executors", default-features = false }
 tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["io"] }
 thiserror = { workspace = true }

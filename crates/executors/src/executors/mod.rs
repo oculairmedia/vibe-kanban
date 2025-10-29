@@ -15,15 +15,19 @@ use workspace_utils::msg_store::MsgStore;
 use crate::{
     approvals::ExecutorApprovalService,
     executors::{
-        amp::Amp, claude::ClaudeCode, codex::Codex, copilot::Copilot, cursor::Cursor,
+        amp::Amp, claude::ClaudeCode, copilot::Copilot, cursor::Cursor,
         gemini::Gemini, opencode::Opencode, qwen::QwenCode,
     },
     mcp_config::McpConfig,
 };
 
+#[cfg(feature = "codex")]
+use crate::executors::codex::Codex;
+
 pub mod acp;
 pub mod amp;
 pub mod claude;
+#[cfg(feature = "codex")]
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
@@ -76,6 +80,7 @@ pub enum CodingAgent {
     ClaudeCode,
     Amp,
     Gemini,
+    #[cfg(feature = "codex")]
     Codex,
     Opencode,
     Cursor,
@@ -86,6 +91,7 @@ pub enum CodingAgent {
 impl CodingAgent {
     pub fn get_mcp_config(&self) -> McpConfig {
         match self {
+            #[cfg(feature = "codex")]
             Self::Codex(_) => McpConfig::new(
                 vec!["mcp_servers".to_string()],
                 serde_json::json!({
@@ -130,6 +136,7 @@ impl CodingAgent {
         match self {
             Self::ClaudeCode(_) => vec![BaseAgentCapability::SessionFork],
             Self::Amp(_) => vec![BaseAgentCapability::SessionFork],
+            #[cfg(feature = "codex")]
             Self::Codex(_) => vec![BaseAgentCapability::SessionFork],
             Self::Gemini(_) => vec![BaseAgentCapability::SessionFork],
             Self::QwenCode(_) => vec![BaseAgentCapability::SessionFork],

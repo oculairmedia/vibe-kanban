@@ -25,7 +25,7 @@ COPY crates ./crates
 # Configure git to use https for GitHub (public repos don't need auth)
 RUN git config --global url."https://github.com/".insteadOf git@github.com:
 
-# Build the MCP system server binary
+# Build the MCP system server binary without the codex feature (to avoid codex-protocol compilation errors)
 RUN cargo build --release --bin mcp_system_server
 
 # Runtime stage
