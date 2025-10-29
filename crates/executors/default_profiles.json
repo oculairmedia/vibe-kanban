@@ -40,7 +40,9 @@
     },
     "OPENCODE": {
       "DEFAULT": {
-        "OPENCODE": {}
+        "OPENCODE": {
+          "model": "anthropic/claude-sonnet-4.5"
+        }
       }
     },
     "QWEN_CODE": {
