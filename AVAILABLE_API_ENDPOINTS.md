@@ -80,6 +80,7 @@
 | POST | `/api/task-attempts/{id}/stop` | ✅ | Stop running execution |
 | POST | `/api/task-attempts/{id}/start-dev-server` | ✅ | Start dev server for attempt |
 | GET | `/api/task-attempts/{id}/branch-status` | ✅ | Get git branch status |
+| GET | `/api/task-attempts/{id}/commits` | ✅ | Get all commits with metadata |
 | GET | `/api/task-attempts/{id}/commit-info` | ✅ | Get commit information |
 | GET | `/api/task-attempts/{id}/commit-compare` | ✅ | Compare commits |
 | GET | `/api/task-attempts/{id}/diff/ws` | ✅ | WebSocket stream of git diff |
@@ -115,6 +116,10 @@
 - `create_followup_attempt` - ✅ Working
 - `merge_task_attempt` - ✅ Working
 - `start_dev_server` - ✅ Working
+- `get_branch_status` - ✅ Working (VIBEK-34) ⭐ NEW
+- `get_attempt_commits` - ✅ Working (VIBEK-28) ⭐ NEW
+- `compare_commit_to_head` - ✅ Working (VIBEK-29) ⭐ NEW
+- `abort_conflicts` - ✅ Working (VIBEK-27) ⭐ NEW
 - `get_attempt_artifacts` - ❌ DISABLED (awaiting deployment)
 - `create_github_pr` - ❌ DISABLED (awaiting deployment)
 - `push_attempt_branch` - ❌ DISABLED (awaiting deployment)
@@ -281,7 +286,7 @@
 
 ## Summary for MCP Tool Planning
 
-### ✅ Currently Viable Features (17 Active MCP Tools)
+### ✅ Currently Viable Features (21 Active MCP Tools)
 
 **Projects:**
 - List, create, update, delete projects ✓
@@ -299,7 +304,10 @@
 - Merge into main branch ✓
 - Stop running executions ✓
 - Start dev servers ✓
-- Monitor branch status ✓
+- Monitor branch status ✓ (NEW: get_branch_status)
+- View commit history with metadata ✓ (NEW: get_attempt_commits)
+- Compare commits to HEAD ✓ (NEW: compare_commit_to_head)
+- Abort merge/rebase conflicts ✓ (NEW: abort_conflicts)
 - Manage conflicts ✓
 
 **Execution Processes:**
@@ -323,11 +331,19 @@
 ### 🎯 Recommendation
 
 For maximum compatibility with the published NPM package:
-1. **Use the 17 active MCP tools** - These work with current deployment
+1. **Use the 21 active MCP tools** - These work with current deployment
 2. **Avoid the 4 disabled tools** - They require endpoints not yet published
 3. **For PR workflows** - Use GitHub CLI (`gh`) or API directly as workaround
 4. **For git operations** - Use git commands directly in task attempts
 5. **For artifacts** - Query execution processes and use git commands
+
+### 🆕 Recent Additions (2025-10-29)
+
+**Batch 1 - Quick Wins (4 tools completed):**
+- ✅ `get_branch_status` (VIBEK-34) - Monitor branch sync status, commits ahead/behind, conflicts
+- ✅ `get_attempt_commits` (VIBEK-28) - View commit history with author, timestamp, diff stats
+- ✅ `compare_commit_to_head` (VIBEK-29) - Compare commits and check if history is linear
+- ✅ `abort_conflicts` (VIBEK-27) - Abort merge/rebase operations and restore clean state
 
 When the project maintainer publishes the next NPM release, uncomment the 4 disabled tools in `crates/server/src/mcp/task_server.rs` to activate them.
 
