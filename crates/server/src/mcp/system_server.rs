@@ -152,6 +152,23 @@ pub struct HealthCheckResponse {
     pub uptime_seconds: Option<u64>,
 }
 
+// Simplified version for MCP deserialization (uses String instead of enum)
+#[derive(Debug, Serialize, Deserialize)]
+struct ExecutorProfileInfoSimple {
+    executor: String,
+    variant: String,
+    available: bool,
+    capabilities: Vec<String>,
+    supports_mcp: bool,
+    config_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ExecutorProfilesResponseSimple {
+    profiles: Vec<ExecutorProfileInfoSimple>,
+    count: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct SystemServer {
     client: Arc<reqwest::Client>,
@@ -226,8 +243,16 @@ impl SystemServer {
     }
 
     async fn get_config_from_api(&self) -> Result<Config, McpError> {
-        let url = self.url("/api/config/info");
-        self.send_json(self.client.get(&url)).await
+        let url = self.url("/api/info");
+        
+        // Deserialize only the fields we need from UserSystemInfo
+        #[derive(Deserialize)]
+        struct UserSystemInfoPartial {
+            config: Config,
+        }
+        
+        let user_info: UserSystemInfoPartial = self.send_json(self.client.get(&url)).await?;
+        Ok(user_info.config)
     }
 
     async fn update_config_via_api(&self, updates: UpdateConfigRequest) -> Result<Config, McpError> {
@@ -374,13 +399,17 @@ impl SystemServer {
         let hard_timeout = timeout + 2000;
         let depth = request.max_depth.unwrap_or(5);
 
+        // Default to /opt/stacks for better developer experience
+        let default_path = "/opt/stacks".to_string();
+        let path = request.path.clone().or(Some(default_path.clone()));
+
         let repositories = self
             .filesystem_service
-            .list_git_repos(request.path.clone(), timeout, hard_timeout, Some(depth))
+            .list_git_repos(path.clone(), timeout, hard_timeout, Some(depth))
             .await
             .map_err(|e| McpError::internal(format!("Failed to list git repositories: {}", e)))?;
 
-        let search_path = request.path.unwrap_or_else(|| "home directory".to_string());
+        let search_path = request.path.unwrap_or(default_path);
 
         let response = ListGitReposResponse {
             count: repositories.len(),
@@ -409,7 +438,7 @@ impl SystemServer {
     #[tool(description = "List all available executor profiles with their capabilities and availability status")]
     async fn list_executor_profiles(&self) -> McpResult<String> {
         let url = self.url("/api/executor-profiles");
-        let data: crate::routes::config::ExecutorProfilesResponse =
+        let data: ExecutorProfilesResponseSimple =
             self.send_json(self.client.get(&url)).await?;
         Ok(serde_json::to_string_pretty(&data).unwrap())
     }
