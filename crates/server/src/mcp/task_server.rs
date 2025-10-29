@@ -474,6 +474,31 @@ pub struct GetProcessRawLogsResponse {
     pub inserted_at: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetProcessNormalizedLogsRequest {
+    #[schemars(description = "The ID of the execution process to retrieve normalized logs for")]
+    pub process_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ProcessLogEntry {
+    #[schemars(description = "Sequential index of the log entry")]
+    pub index: usize,
+    #[schemars(description = "Log level (stdout, stderr, info)")]
+    pub level: String,
+    #[schemars(description = "The log message content")]
+    pub message: String,
+    #[schemars(description = "ISO 8601 timestamp of the log entry")]
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetProcessNormalizedLogsResponse {
+    pub execution_id: String,
+    pub total_entries: usize,
+    pub logs: Vec<ProcessLogEntry>,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -548,7 +573,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -980,6 +1005,58 @@ impl TaskServer {
             byte_size: api_response.byte_size,
             log_count: api_response.logs.len(),
             inserted_at: api_response.inserted_at,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Get parsed and normalized logs for an execution process. Returns structured log entries with timestamps, levels (stdout/stderr/info), and messages. Useful for debugging task execution. `process_id` is required!"
+    )]
+    async fn get_process_normalized_logs(
+        &self,
+        request: GetProcessNormalizedLogsRequest,
+    ) -> McpResult<String> {
+        let url = self.url(&format!(
+            "/api/execution-processes/{}/logs/normalized",
+            request.process_id
+        ));
+
+        // Define a local response type that matches the API response
+        #[derive(Debug, Deserialize)]
+        struct ApiNormalizedLogEntry {
+            index: usize,
+            level: String,
+            message: String,
+            timestamp: Option<String>,
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct ApiNormalizedLogsResponse {
+            execution_id: String,
+            logs: Vec<ApiNormalizedLogEntry>,
+            total_entries: usize,
+        }
+
+        let api_response: ApiNormalizedLogsResponse =
+            self.send_json(self.client.get(&url)).await?;
+
+        // Convert to MCP response format
+        let logs: Vec<ProcessLogEntry> = api_response
+            .logs
+            .into_iter()
+            .map(|entry| ProcessLogEntry {
+                index: entry.index,
+                level: entry.level,
+                message: entry.message,
+                timestamp: entry.timestamp,
+            })
+            .collect();
+
+        let response = GetProcessNormalizedLogsResponse {
+            execution_id: api_response.execution_id,
+            total_entries: api_response.total_entries,
+            logs,
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())

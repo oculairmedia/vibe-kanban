@@ -30,6 +30,21 @@ pub struct ExecutionProcessQuery {
     pub show_soft_deleted: Option<bool>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct NormalizedLogEntry {
+    pub index: usize,
+    pub level: String,
+    pub message: String,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NormalizedLogsResponse {
+    pub execution_id: String,
+    pub logs: Vec<NormalizedLogEntry>,
+    pub total_entries: usize,
+}
+
 pub async fn get_execution_processes(
     State(deployment): State<DeploymentImpl>,
     Query(query): Query<ExecutionProcessQuery>,
@@ -221,6 +236,86 @@ pub async fn get_raw_logs(
     Ok(ResponseJson(ApiResponse::success(response)))
 }
 
+pub async fn get_normalized_logs(
+    Extension(execution_process): Extension<ExecutionProcess>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<NormalizedLogsResponse>>, ApiError> {
+    use chrono::Utc;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
+    let exec_id = execution_process.id;
+    let pool = &deployment.db().pool;
+
+    // Parse raw logs from database
+    let log_record = ExecutionProcessLogs::find_by_execution_id(pool, exec_id)
+        .await?
+        .ok_or_else(|| ApiError::ExecutionProcess(ExecutionProcessError::ExecutionProcessNotFound))?;
+
+    let raw_logs = log_record
+        .parse_logs()
+        .map_err(|e| ApiError::Database(sqlx::Error::Decode(Box::new(e))))?;
+
+    // Convert raw logs to normalized entries
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut normalized_entries: Vec<NormalizedLogEntry> = Vec::new();
+
+    for msg in raw_logs {
+        match msg {
+            LogMsg::Stdout(content) => {
+                let index = counter.fetch_add(1, Ordering::SeqCst);
+                normalized_entries.push(NormalizedLogEntry {
+                    index,
+                    level: "stdout".to_string(),
+                    message: content,
+                    timestamp: Some(Utc::now().to_rfc3339()),
+                });
+            }
+            LogMsg::Stderr(content) => {
+                let index = counter.fetch_add(1, Ordering::SeqCst);
+                normalized_entries.push(NormalizedLogEntry {
+                    index,
+                    level: "stderr".to_string(),
+                    message: content,
+                    timestamp: Some(Utc::now().to_rfc3339()),
+                });
+            }
+            LogMsg::JsonPatch(patch) => {
+                // Extract structured information from JSON patches
+                let index = counter.fetch_add(1, Ordering::SeqCst);
+                let patch_json = serde_json::to_string(&patch)
+                    .unwrap_or_else(|_| "{}".to_string());
+                normalized_entries.push(NormalizedLogEntry {
+                    index,
+                    level: "info".to_string(),
+                    message: patch_json,
+                    timestamp: Some(Utc::now().to_rfc3339()),
+                });
+            }
+            LogMsg::SessionId(session_id) => {
+                let index = counter.fetch_add(1, Ordering::SeqCst);
+                normalized_entries.push(NormalizedLogEntry {
+                    index,
+                    level: "info".to_string(),
+                    message: format!("Session ID: {}", session_id),
+                    timestamp: Some(Utc::now().to_rfc3339()),
+                });
+            }
+            LogMsg::Finished => {
+                // Skip the Finished marker in normalized output
+                continue;
+            }
+        }
+    }
+
+    let response = NormalizedLogsResponse {
+        execution_id: exec_id.to_string(),
+        total_entries: normalized_entries.len(),
+        logs: normalized_entries,
+    };
+
+    Ok(ResponseJson(ApiResponse::success(response)))
+}
+
 pub async fn stop_execution_process(
     Extension(execution_process): Extension<ExecutionProcess>,
     State(deployment): State<DeploymentImpl>,
@@ -293,6 +388,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/", get(get_execution_process_by_id))
         .route("/stop", post(stop_execution_process))
         .route("/logs", get(get_raw_logs))
+        .route("/logs/normalized", get(get_normalized_logs))
         .route("/raw-logs/ws", get(stream_raw_logs_ws))
         .route("/normalized-logs/ws", get(stream_normalized_logs_ws))
         .layer(from_fn_with_state(
