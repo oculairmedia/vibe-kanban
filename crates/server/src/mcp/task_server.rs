@@ -345,6 +345,20 @@ pub struct CreateFollowupAttemptResponse {
     pub based_on_attempt_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MergeTaskAttemptRequest {
+    #[schemars(description = "The ID of the task attempt to merge")]
+    pub attempt_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MergeTaskAttemptResponse {
+    pub success: bool,
+    pub message: String,
+    pub task_id: String,
+    pub attempt_id: String,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -419,7 +433,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -670,7 +684,7 @@ impl TaskServer {
     )]
     async fn create_followup_attempt(&self, request: CreateFollowupAttemptRequest) -> McpResult<String> {
         let url = self.url("/api/task-attempts/followup");
-        
+
         #[derive(Serialize)]
         struct FollowupPayload {
             previous_attempt_id: Uuid,
@@ -690,6 +704,29 @@ impl TaskServer {
             task_id: attempt.task_id.to_string(),
             attempt_id: attempt.id.to_string(),
             based_on_attempt_id: request.previous_attempt_id.to_string(),
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Merge a completed task attempt into its target branch. This performs a git merge operation and marks the task as done. The attempt must be complete with no conflicts. `attempt_id` is required!"
+    )]
+    async fn merge_task_attempt(&self, request: MergeTaskAttemptRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/task-attempts/{}/merge", request.attempt_id));
+
+        // POST to merge endpoint returns ApiResponse<()>
+        self.send_json::<serde_json::Value>(self.client.post(&url)).await?;
+
+        // Fetch the task attempt to get task_id for response
+        let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
+        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+
+        let response = MergeTaskAttemptResponse {
+            success: true,
+            message: "Task attempt merged successfully".to_string(),
+            task_id: attempt.task_id.to_string(),
+            attempt_id: request.attempt_id.to_string(),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
