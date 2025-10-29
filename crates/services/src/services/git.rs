@@ -1902,6 +1902,20 @@ impl GitService {
         Ok(repo)
     }
 
+    /// Get diff text between two commits as a string (unified diff format)
+    pub fn get_diff_between_commits(
+        &self,
+        repo_path: &Path,
+        before_commit: &str,
+        after_commit: &str,
+    ) -> Result<String, GitServiceError> {
+        let git_cli = GitCli::new();
+        let diff_text = git_cli
+            .git(repo_path, ["diff", before_commit, after_commit])
+            .map_err(|e| GitServiceError::InvalidRepository(format!("git diff failed: {e}")))?;
+        Ok(diff_text)
+    }
+
     /// Collect file statistics from recent commits for ranking purposes
     pub fn collect_recent_file_stats(
         &self,

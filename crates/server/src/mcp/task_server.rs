@@ -512,6 +512,45 @@ pub struct StartDevServerResponse {
     pub attempt_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetAttemptArtifactsRequest {
+    #[schemars(description = "The ID of the task attempt to get artifacts for")]
+    pub attempt_id: Uuid,
+    #[schemars(description = "Filter by artifact type (GIT_DIFF, GIT_COMMIT, EXECUTION_LOG)")]
+    pub artifact_type: Option<String>,
+    #[schemars(description = "Maximum number of artifacts to return")]
+    pub limit: Option<usize>,
+    #[schemars(description = "Offset for pagination")]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ArtifactSummary {
+    #[schemars(description = "Type of artifact (GIT_DIFF, GIT_COMMIT, EXECUTION_LOG)")]
+    pub artifact_type: String,
+    #[schemars(description = "Execution process ID this artifact came from")]
+    pub process_id: String,
+    #[schemars(description = "Content of the artifact (may be truncated for display)")]
+    pub content: Option<String>,
+    #[schemars(description = "Size in bytes")]
+    pub size_bytes: usize,
+    #[schemars(description = "Git commit SHA (for commit artifacts)")]
+    pub commit_sha: Option<String>,
+    #[schemars(description = "Git commit subject/message (for commit artifacts)")]
+    pub commit_subject: Option<String>,
+    #[schemars(description = "Before commit SHA (for diff artifacts)")]
+    pub before_commit: Option<String>,
+    #[schemars(description = "After commit SHA (for diff artifacts)")]
+    pub after_commit: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetAttemptArtifactsResponse {
+    pub attempt_id: String,
+    pub artifacts: Vec<ArtifactSummary>,
+    pub total_count: usize,
+}
+
 /// Main Vibe Kanban Task MCP Server
 #[derive(Clone)]
 pub struct TaskServer {
@@ -586,7 +625,7 @@ impl TaskServer {
 #[turbomcp::server(
     name = "vibe-kanban",
     version = "1.0.0",
-    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
+    description = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_task_attempt', 'get_task', 'update_task', 'delete_task', 'list_task_attempts', 'get_task_attempt', 'get_attempt_artifacts', 'create_followup_attempt', 'merge_task_attempt', 'list_execution_processes', 'get_execution_process', 'stop_execution_process', 'get_process_raw_logs', 'get_process_normalized_logs', 'start_dev_server'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids."
 )]
 impl TaskServer {
     #[tool(
@@ -1088,6 +1127,76 @@ impl TaskServer {
             success: true,
             message: "Development server started successfully".to_string(),
             attempt_id: request.attempt_id.to_string(),
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Get all artifacts (git diffs, commits, execution logs) for a task attempt. Returns work products from execution processes including code changes, commit messages, and process outputs. Useful for reviewing what work was done during an attempt. `attempt_id` is required!"
+    )]
+    async fn get_attempt_artifacts(&self, request: GetAttemptArtifactsRequest) -> McpResult<String> {
+        let mut url = self.url(&format!("/api/task-attempts/{}/artifacts", request.attempt_id));
+
+        // Add query parameters
+        let mut params = vec![];
+        if let Some(artifact_type) = &request.artifact_type {
+            params.push(format!("artifact_type={}", artifact_type));
+        }
+        if let Some(limit) = request.limit {
+            params.push(format!("limit={}", limit));
+        }
+        if let Some(offset) = request.offset {
+            params.push(format!("offset={}", offset));
+        }
+
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
+        // Define local response type matching the API
+        #[derive(Debug, Deserialize)]
+        struct ApiArtifact {
+            artifact_type: String,
+            process_id: String,
+            content: Option<String>,
+            size_bytes: usize,
+            commit_sha: Option<String>,
+            commit_subject: Option<String>,
+            before_commit: Option<String>,
+            after_commit: Option<String>,
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct ApiArtifactsResponse {
+            attempt_id: String,
+            artifacts: Vec<ApiArtifact>,
+            total_count: usize,
+        }
+
+        let api_response: ApiArtifactsResponse = self.send_json(self.client.get(&url)).await?;
+
+        // Convert to MCP response format
+        let artifacts: Vec<ArtifactSummary> = api_response
+            .artifacts
+            .into_iter()
+            .map(|artifact| ArtifactSummary {
+                artifact_type: artifact.artifact_type,
+                process_id: artifact.process_id,
+                content: artifact.content,
+                size_bytes: artifact.size_bytes,
+                commit_sha: artifact.commit_sha,
+                commit_subject: artifact.commit_subject,
+                before_commit: artifact.before_commit,
+                after_commit: artifact.after_commit,
+            })
+            .collect();
+
+        let response = GetAttemptArtifactsResponse {
+            attempt_id: api_response.attempt_id,
+            artifacts,
+            total_count: api_response.total_count,
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())

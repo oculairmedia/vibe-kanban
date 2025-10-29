@@ -1,3 +1,4 @@
+pub mod attempt_artifacts;
 pub mod drafts;
 pub mod util;
 
@@ -1750,6 +1751,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let task_attempt_id_router = Router::new()
         .route("/", get(get_task_attempt))
         .route("/details", get(get_task_attempt_details))
+        .route("/artifacts", get(attempt_artifacts::get_attempt_artifacts))
         .route("/follow-up", post(follow_up))
         .route(
             "/draft",
