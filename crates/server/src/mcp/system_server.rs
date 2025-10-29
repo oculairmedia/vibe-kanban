@@ -1,13 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use rmcp::{
-    handler::server::tool::{Parameters, ToolRouter},
-    model::{
-        CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
-    },
-    schemars, tool, tool_handler, tool_router, ErrorData, ServerHandler,
-};
-use serde::{Deserialize, Serialize};
+use turbomcp::prelude::*;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use services::services::{
     config::Config,
     filesystem::{DirectoryEntry, DirectoryListResponse, FilesystemService},
@@ -160,40 +154,67 @@ pub struct HealthCheckResponse {
 
 #[derive(Debug, Clone)]
 pub struct SystemServer {
-    client: reqwest::Client,
-    base_url: String,
-    tool_router: ToolRouter<SystemServer>,
-    filesystem_service: FilesystemService,
+    client: Arc<reqwest::Client>,
+    base_url: Arc<String>,
+    filesystem_service: Arc<FilesystemService>,
     start_time: std::time::Instant,
 }
 
 impl SystemServer {
     pub fn new(base_url: &str) -> Self {
         Self {
-            client: reqwest::Client::new(),
-            base_url: base_url.to_string(),
-            tool_router: Self::tool_router(),
-            filesystem_service: FilesystemService::new(),
+            client: Arc::new(reqwest::Client::new()),
+            base_url: Arc::new(base_url.to_string()),
+            filesystem_service: Arc::new(FilesystemService::new()),
             start_time: std::time::Instant::now(),
         }
     }
 
-    fn success<T: Serialize>(data: &T) -> Result<CallToolResult, ErrorData> {
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(data)
-                .unwrap_or_else(|_| "Failed to serialize response".to_string()),
-        )]))
+    fn err_str(msg: &str, details: Option<&str>) -> McpError {
+        let mut error_msg = msg.to_string();
+        if let Some(d) = details {
+            error_msg.push_str(&format!(": {}", d));
+        }
+        McpError::internal(error_msg)
     }
 
-    fn err<S: Into<String>>(msg: S, details: Option<S>) -> Result<CallToolResult, ErrorData> {
-        let mut v = serde_json::json!({"success": false, "error": msg.into()});
-        if let Some(d) = details {
-            v["details"] = serde_json::json!(d.into());
+    async fn send_json<T: DeserializeOwned>(
+        &self,
+        rb: reqwest::RequestBuilder,
+    ) -> Result<T, McpError> {
+        let resp = rb
+            .send()
+            .await
+            .map_err(|e| Self::err_str("Failed to connect to VK API", Some(&e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            return Err(Self::err_str(
+                &format!("VK API returned error status: {}", status),
+                None,
+            ));
         }
-        Ok(CallToolResult::error(vec![Content::text(
-            serde_json::to_string_pretty(&v)
-                .unwrap_or_else(|_| "Failed to serialize error".to_string()),
-        )]))
+
+        #[derive(Deserialize)]
+        struct ApiResponseEnvelope<T> {
+            success: bool,
+            data: Option<T>,
+            message: Option<String>,
+        }
+
+        let api_response = resp
+            .json::<ApiResponseEnvelope<T>>()
+            .await
+            .map_err(|e| Self::err_str("Failed to parse VK API response", Some(&e.to_string())))?;
+
+        if !api_response.success {
+            let msg = api_response.message.as_deref().unwrap_or("Unknown error");
+            return Err(Self::err_str("VK API returned error", Some(msg)));
+        }
+
+        api_response
+            .data
+            .ok_or_else(|| Self::err_str("VK API response missing data field", None))
     }
 
     fn url(&self, path: &str) -> String {
@@ -204,38 +225,12 @@ impl SystemServer {
         )
     }
 
-    async fn get_config_from_api(&self) -> Result<Config, String> {
+    async fn get_config_from_api(&self) -> Result<Config, McpError> {
         let url = self.url("/api/config/info");
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to connect to API: {}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("API returned error status: {}", resp.status()));
-        }
-
-        #[derive(Deserialize)]
-        struct ApiResponse {
-            success: bool,
-            data: Option<Config>,
-        }
-
-        let api_response: ApiResponse = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse API response: {}", e))?;
-
-        if !api_response.success {
-            return Err("API returned error".to_string());
-        }
-
-        api_response.data.ok_or_else(|| "Missing data field".to_string())
+        self.send_json(self.client.get(&url)).await
     }
 
-    async fn update_config_via_api(&self, updates: UpdateConfigRequest) -> Result<Config, String> {
+    async fn update_config_via_api(&self, updates: UpdateConfigRequest) -> Result<Config, McpError> {
         // First get current config
         let mut config = self.get_config_from_api().await?;
 
@@ -250,20 +245,14 @@ impl SystemServer {
 
             // Validate executor name against known executors
             if let Err(err_msg) = validate_executor(&executor_str) {
-                return Err(err_msg);
+                return Err(McpError::invalid_request(err_msg));
             }
-
-            let variant = if parts.len() > 1 {
-                Some(parts[1].trim().to_string())
-            } else {
-                None
-            };
 
             // NOTE: We can't set config.executor_profile directly because we don't have
             // access to executors::profile::ExecutorProfileId anymore. This functionality
             // needs to be updated via the REST API instead, which still has executors dependency.
             // For now, we return an error directing users to use the web UI or API.
-            return Err("Updating executor profile via MCP system server is temporarily disabled. Please use the Vibe Kanban web UI or REST API at /api/config/config instead.".to_string());
+            return Err(McpError::invalid_request("Updating executor profile via MCP system server is temporarily disabled. Please use the Vibe Kanban web UI or REST API at /api/config/config instead."));
         }
         if let Some(analytics) = updates.analytics_enabled {
             config.analytics_enabled = Some(analytics);
@@ -275,46 +264,23 @@ impl SystemServer {
         // Note: editor field is EditorConfig, not a String - for now, skip this field
         // TODO: Implement proper editor config parsing
         if updates.editor.is_some() {
-            return Err("Updating editor config is not yet supported".to_string());
+            return Err(McpError::invalid_request("Updating editor config is not yet supported"));
         }
 
         // Send update
         let url = self.url("/api/config/config");
-        let resp = self
-            .client
-            .put(&url)
-            .json(&config)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to update config: {}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("API returned error status: {}", resp.status()));
-        }
-
-        #[derive(Deserialize)]
-        struct ApiResponse {
-            success: bool,
-            data: Option<Config>,
-        }
-
-        let api_response: ApiResponse = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse API response: {}", e))?;
-
-        if !api_response.success {
-            return Err("API returned error".to_string());
-        }
-
-        api_response.data.ok_or_else(|| "Missing data field".to_string())
+        self.send_json(self.client.put(&url).json(&config)).await
     }
 }
 
-#[tool_router]
+#[turbomcp::server(
+    name = "vibe-kanban-system",
+    version = "1.0.0",
+    description = "System configuration and discovery tools for Vibe Kanban. TOOLS: 'get_system_info', 'get_config', 'update_config', 'list_mcp_servers', 'update_mcp_servers', 'list_executor_profiles', 'list_git_repos', 'list_directory', 'health_check'. Use these tools to inspect system state, manage configuration, discover resources, and monitor health."
+)]
 impl SystemServer {
     #[tool(description = "Get system information including OS details and key directories")]
-    async fn get_system_info(&self) -> Result<CallToolResult, ErrorData> {
+    async fn get_system_info(&self) -> McpResult<String> {
         let env = Environment::new();
         let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -328,74 +294,60 @@ impl SystemServer {
             current_directory: current_dir,
         };
 
-        Self::success(&GetSystemInfoResponse {
+        let response = GetSystemInfoResponse {
             system: system_info,
-        })
+        };
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
     #[tool(description = "Get the current Vibe Kanban configuration")]
-    async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
-        match self.get_config_from_api().await {
-            Ok(config) => Self::success(&GetConfigResponse { config }),
-            Err(e) => Self::err(format!("Failed to get configuration: {}", e), None),
-        }
+    async fn get_config(&self) -> McpResult<String> {
+        let config = self.get_config_from_api().await?;
+        let response = GetConfigResponse { config };
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
     #[tool(
         description = "Update Vibe Kanban configuration settings. Only provided fields will be updated."
     )]
-    async fn update_config(
-        &self,
-        Parameters(request): Parameters<UpdateConfigRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        match self.update_config_via_api(request).await {
-            Ok(config) => Self::success(&UpdateConfigResponse {
-                config,
-                message: "Configuration updated successfully".to_string(),
-            }),
-            Err(e) => Self::err(format!("Failed to update configuration: {}", e), None),
-        }
+    async fn update_config(&self, request: UpdateConfigRequest) -> McpResult<String> {
+        let config = self.update_config_via_api(request).await?;
+        let response = UpdateConfigResponse {
+            config,
+            message: "Configuration updated successfully".to_string(),
+        };
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
     #[tool(description = "List configured MCP servers for a specific executor")]
-    async fn list_mcp_servers(
-        &self,
-        Parameters(ListMcpServersRequest { executor }): Parameters<ListMcpServersRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
+    async fn list_mcp_servers(&self, request: ListMcpServersRequest) -> McpResult<String> {
         // Parse executor
-        let executor_trimmed = executor.trim();
+        let executor_trimmed = request.executor.trim();
         let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
 
         // Validate executor name
         if let Err(err_msg) = validate_executor(&normalized_executor) {
-            return Self::err(err_msg, None);
+            return Err(McpError::invalid_request(err_msg));
         }
 
         // NOTE: This functionality requires access to executors crate which has
         // codex-protocol compilation issues. The MCP server reading logic depends on
         // ExecutorConfigs::get_cached() and read_agent_config() which are not available.
         // Users should access MCP configs directly via the filesystem or use the web UI.
-        Self::err(
+        Err(McpError::internal(format!(
             "Listing MCP servers via system server is temporarily disabled due to build issues. \
-             Please access MCP config files directly from the filesystem, or use the Vibe Kanban web UI.",
-            Some(format!(
-                "Requested executor: {}. Config files are typically in ~/.config/{}/",
-                executor_trimmed,
-                executor_trimmed.to_lowercase()
-            ))
-        )
+             Please access MCP config files directly from the filesystem, or use the Vibe Kanban web UI. \
+             Requested executor: {}. Config files are typically in ~/.config/{}/",
+            executor_trimmed,
+            executor_trimmed.to_lowercase()
+        )))
     }
 
     #[tool(description = "Update MCP server configuration for a specific executor")]
-    async fn update_mcp_servers(
-        &self,
-        Parameters(UpdateMcpServersRequest { executor, servers }): Parameters<
-            UpdateMcpServersRequest,
-        >,
-    ) -> Result<CallToolResult, ErrorData> {
+    async fn update_mcp_servers(&self, request: UpdateMcpServersRequest) -> McpResult<String> {
         let url = self.url(&format!(
             "/api/config/mcp-config?executor={}",
-            urlencoding::encode(&executor)
+            urlencoding::encode(&request.executor)
         ));
 
         #[derive(Serialize)]
@@ -403,149 +355,72 @@ impl SystemServer {
             servers: HashMap<String, serde_json::Value>,
         }
 
-        let resp = match self
-            .client
-            .post(&url)
-            .json(&Payload { servers: servers.clone() })
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => return Self::err(format!("Failed to send request: {}", e), None),
+        let _: serde_json::Value = self
+            .send_json(self.client.post(&url).json(&Payload { servers: request.servers.clone() }))
+            .await?;
+
+        let response = UpdateMcpServersResponse {
+            message: "MCP servers updated successfully".to_string(),
+            servers_count: request.servers.len(),
         };
-
-        if !resp.status().is_success() {
-            return Self::err(
-                format!("API returned error status: {}", resp.status()),
-                None,
-            );
-        }
-
-        #[derive(Deserialize)]
-        struct ApiResponse {
-            success: bool,
-            data: Option<String>,
-        }
-
-        let api_response: ApiResponse = match resp.json().await {
-            Ok(r) => r,
-            Err(e) => return Self::err(format!("Failed to parse response: {}", e), None),
-        };
-
-        if !api_response.success {
-            return Self::err("API returned error", None);
-        }
-
-        Self::success(&UpdateMcpServersResponse {
-            message: api_response
-                .data
-                .unwrap_or_else(|| "MCP servers updated".to_string()),
-            servers_count: servers.len(),
-        })
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
     #[tool(
         description = "List git repositories on the system. Searches common directories by default."
     )]
-    async fn list_git_repos(
-        &self,
-        Parameters(ListGitReposRequest {
-            path,
-            timeout_ms,
-            max_depth,
-        }): Parameters<ListGitReposRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let timeout = timeout_ms.unwrap_or(5000);
+    async fn list_git_repos(&self, request: ListGitReposRequest) -> McpResult<String> {
+        let timeout = request.timeout_ms.unwrap_or(5000);
         let hard_timeout = timeout + 2000;
-        let depth = max_depth.unwrap_or(5);
+        let depth = request.max_depth.unwrap_or(5);
 
-        let repositories = match self
+        let repositories = self
             .filesystem_service
-            .list_git_repos(path.clone(), timeout, hard_timeout, Some(depth))
+            .list_git_repos(request.path.clone(), timeout, hard_timeout, Some(depth))
             .await
-        {
-            Ok(repos) => repos,
-            Err(e) => {
-                return Self::err(format!("Failed to list git repositories: {}", e), None);
-            }
-        };
+            .map_err(|e| McpError::internal(format!("Failed to list git repositories: {}", e)))?;
 
-        let search_path = path.unwrap_or_else(|| "home directory".to_string());
+        let search_path = request.path.unwrap_or_else(|| "home directory".to_string());
 
-        Self::success(&ListGitReposResponse {
+        let response = ListGitReposResponse {
             count: repositories.len(),
             repositories,
             search_path,
-        })
+        };
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
     #[tool(description = "List files and directories in a path")]
-    async fn list_directory(
-        &self,
-        Parameters(ListDirectoryRequest { path }): Parameters<ListDirectoryRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let response: DirectoryListResponse = match self.filesystem_service.list_directory(path).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Self::err(format!("Failed to list directory: {}", e), None);
-            }
-        };
+    async fn list_directory(&self, request: ListDirectoryRequest) -> McpResult<String> {
+        let response: DirectoryListResponse = self
+            .filesystem_service
+            .list_directory(request.path)
+            .await
+            .map_err(|e| McpError::internal(format!("Failed to list directory: {}", e)))?;
 
-        Self::success(&ListDirectoryResponseWrapper {
+        let wrapper = ListDirectoryResponseWrapper {
             count: response.entries.len(),
             entries: response.entries,
             current_path: response.current_path,
-        })
+        };
+        Ok(serde_json::to_string_pretty(&wrapper).unwrap())
     }
 
     #[tool(description = "List all available executor profiles with their capabilities and availability status")]
-    async fn list_executor_profiles(&self) -> Result<CallToolResult, ErrorData> {
+    async fn list_executor_profiles(&self) -> McpResult<String> {
         let url = self.url("/api/executor-profiles");
-
-        let resp = match self
-            .client
-            .get(&url)
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => return Self::err(format!("Failed to send request: {}", e), None),
-        };
-
-        if !resp.status().is_success() {
-            return Self::err(
-                format!("API returned error status: {}", resp.status()),
-                None,
-            );
-        }
-
-        #[derive(Deserialize)]
-        struct ApiResponse {
-            success: bool,
-            data: Option<crate::routes::config::ExecutorProfilesResponse>,
-        }
-
-        let api_response: ApiResponse = match resp.json().await {
-            Ok(r) => r,
-            Err(e) => return Self::err(format!("Failed to parse response: {}", e), None),
-        };
-
-        if !api_response.success {
-            return Self::err("API returned error", None);
-        }
-
-        match api_response.data {
-            Some(data) => Self::success(&data),
-            None => Self::err("Missing data field in response", None),
-        }
+        let data: crate::routes::config::ExecutorProfilesResponse =
+            self.send_json(self.client.get(&url)).await?;
+        Ok(serde_json::to_string_pretty(&data).unwrap())
     }
 
     #[tool(description = "Check if Vibe Kanban is healthy and get version information")]
-    async fn health_check(&self) -> Result<CallToolResult, ErrorData> {
+    async fn health_check(&self) -> McpResult<String> {
         let url = self.url("/api/health");
 
         // Try to reach the health endpoint
-        let is_healthy = self.client
+        let is_healthy = self
+            .client
             .get(&url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -556,32 +431,33 @@ impl SystemServer {
         let status = if is_healthy { "healthy" } else { "unhealthy" };
         let uptime = self.start_time.elapsed().as_secs();
 
-        Self::success(&HealthCheckResponse {
+        let response = HealthCheckResponse {
             status: status.to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             uptime_seconds: Some(uptime),
-        })
+        };
+        Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 }
 
-#[tool_handler]
-impl ServerHandler for SystemServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2025_03_26,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "vibe-kanban-system".to_string(),
-                version: "1.0.0".to_string(),
-            },
-            instructions: Some(
-                "System configuration and discovery tools for Vibe Kanban. \
-                TOOLS: 'get_system_info', 'get_config', 'update_config', 'list_mcp_servers', \
-                'update_mcp_servers', 'list_executor_profiles', 'list_git_repos', 'list_directory', 'health_check'. \
-                Use these tools to inspect system state, manage configuration, discover resources, \
-                and monitor health."
-                    .to_string(),
-            ),
-        }
+// Custom HTTP runner implementation with permissive security for development
+#[cfg(feature = "http")]
+impl SystemServer {
+    /// Run HTTP server with custom security configuration
+    pub async fn run_http_custom(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use turbomcp_transport::streamable_http_v2::{StreamableHttpConfigBuilder, run_server};
+        use std::time::Duration;
+
+        // Create permissive HTTP config for development
+        let config = StreamableHttpConfigBuilder::new()
+            .with_bind_address(addr)
+            .allow_any_origin(true) // Allow any origin in development mode
+            .allow_localhost(true)
+            .with_rate_limit(1_000_000, Duration::from_secs(60)) // Very high limit for development
+            .build();
+
+        // Run the HTTP server with custom config
+        run_server(config, Arc::new(self.clone())).await?;
+        Ok(())
     }
 }

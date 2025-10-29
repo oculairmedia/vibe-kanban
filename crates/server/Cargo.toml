@@ -13,6 +13,7 @@ local-deployment = { path = "../local-deployment" }
 utils = { path = "../utils" }
 db = { path = "../db" }
 services = { path = "../services" }
+executors = { path = "../executors", default-features = false }
 tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["io"] }
 axum = { workspace = true }

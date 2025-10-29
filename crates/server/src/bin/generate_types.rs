@@ -77,12 +77,6 @@ fn generate_types_content() -> String {
         executors::executors::gemini::Gemini::decl(),
         executors::executors::gemini::GeminiModel::decl(),
         executors::executors::amp::Amp::decl(),
-        executors::executors::codex::Codex::decl(),
-        executors::executors::codex::SandboxMode::decl(),
-        executors::executors::codex::AskForApproval::decl(),
-        executors::executors::codex::ReasoningEffort::decl(),
-        executors::executors::codex::ReasoningSummary::decl(),
-        executors::executors::codex::ReasoningSummaryFormat::decl(),
         executors::executors::cursor::Cursor::decl(),
         executors::executors::copilot::Copilot::decl(),
         executors::executors::opencode::Opencode::decl(),
@@ -174,10 +168,6 @@ fn generate_schemas() -> Result<HashMap<&'static str, String>, serde_json::Error
         (
             "gemini",
             generate_json_schema::<executors::executors::gemini::Gemini>()?,
-        ),
-        (
-            "codex",
-            generate_json_schema::<executors::executors::codex::Codex>()?,
         ),
         (
             "cursor",

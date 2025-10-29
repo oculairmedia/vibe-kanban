@@ -461,9 +461,9 @@ impl TaskServer {
         // Convert McpExecutorProfileId to JSON and then parse as the backend's ExecutorProfileId
         // This works because they have the same structure - we just can't depend on executors crate
         let executor_json = serde_json::to_value(&executor_profile_id)
-            .map_err(|e| McpError::internal_error(format!("Failed to serialize executor: {}", e)))?;
+            .map_err(|e| McpError::internal(format!("Failed to serialize executor: {}", e)))?;
         let backend_executor_profile_id = serde_json::from_value(executor_json)
-            .map_err(|e| McpError::internal_error(format!("Failed to deserialize executor: {}", e)))?;
+            .map_err(|e| McpError::internal(format!("Failed to deserialize executor: {}", e)))?;
 
         let payload = CreateTaskAttemptBody {
             task_id: request.task_id,
