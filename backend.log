@@ -1,0 +1,13 @@
+[2m2025-10-29T04:33:25.957972Z[0m [32m INFO[0m [2mexecutors::profile[0m[2m:[0m No user profiles.json found, using defaults only
+[2m2025-10-29T04:33:25.972046Z[0m [32m INFO[0m [2mlocal_deployment[0m[2m:[0m Starting orphaned image cleanup...
+[2m2025-10-29T04:33:25.975307Z[0m [32m INFO[0m [2mlocal_deployment::container[0m[2m:[0m Starting periodic worktree cleanup...
+[2m2025-10-29T04:33:25.977161Z[0m [32m INFO[0m [2mdeployment[0m[2m:[0m Found orphaned execution process 5fe486ec-bf02-442b-8187-f77b2b90fe9c for task attempt 07100f13-769e-4b07-939a-e0c727f9d0d6
+[2m2025-10-29T04:33:26.002719Z[0m [32m INFO[0m [2mdeployment[0m[2m:[0m Marked orphaned execution process 5fe486ec-bf02-442b-8187-f77b2b90fe9c as failed
+[2m2025-10-29T04:33:26.011245Z[0m [32m INFO[0m [2mservices::services::pr_monitor[0m[2m:[0m Starting PR monitoring service with interval 60s
+[2m2025-10-29T04:33:26.011297Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m Starting file search cache warming...
+[2m2025-10-29T04:33:26.012257Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m Warming cache for 1 projects: ["/opt/stacks/vibe-kanban"]
+[2m2025-10-29T04:33:26.013061Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m Setup file watcher for repo: "/opt/stacks/vibe-kanban"
+[2m2025-10-29T04:33:26.013126Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m Building cache for repo: "/opt/stacks/vibe-kanban"
+[2m2025-10-29T04:33:26.013166Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m File search cache warming completed
+[2m2025-10-29T04:33:26.026511Z[0m [32m INFO[0m [2mserver[0m[2m:[0m Server running on http://0.0.0.0:3105
+[2m2025-10-29T04:33:26.617126Z[0m [32m INFO[0m [2mservices::services::file_search_cache[0m[2m:[0m Successfully cached repo: "/opt/stacks/vibe-kanban"

@@ -1,11 +1,4 @@
-import {
-  DataWithScrollModifier,
-  ScrollModifier,
-  VirtuosoMessageList,
-  VirtuosoMessageListLicense,
-  VirtuosoMessageListMethods,
-  VirtuosoMessageListProps,
-} from '@virtuoso.dev/message-list';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import DisplayConversationEntry from '../NormalizedConversation/DisplayConversationEntry';
@@ -24,67 +17,19 @@ interface VirtualizedListProps {
   task?: TaskWithAttemptStatus;
 }
 
-interface MessageListContext {
-  attempt: TaskAttempt;
-  task?: TaskWithAttemptStatus;
-}
-
-const INITIAL_TOP_ITEM = { index: 'LAST' as const, align: 'end' as const };
-
-const InitialDataScrollModifier: ScrollModifier = {
-  type: 'item-location',
-  location: INITIAL_TOP_ITEM,
-  purgeItemSizes: true,
-};
-
-const AutoScrollToBottom: ScrollModifier = {
-  type: 'auto-scroll-to-bottom',
-  autoScroll: 'smooth',
-};
-
-const ItemContent: VirtuosoMessageListProps<
-  PatchTypeWithKey,
-  MessageListContext
->['ItemContent'] = ({ data, context }) => {
-  const attempt = context?.attempt;
-  const task = context?.task;
-
-  if (data.type === 'STDOUT') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'STDERR') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'NORMALIZED_ENTRY' && attempt) {
-    return (
-      <DisplayConversationEntry
-        expansionKey={data.patchKey}
-        entry={data.content}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        task={task}
-      />
-    );
-  }
-
-  return null;
-};
-
-const computeItemKey: VirtuosoMessageListProps<
-  PatchTypeWithKey,
-  MessageListContext
->['computeItemKey'] = ({ data }) => `l-${data.patchKey}`;
-
 const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
-  const [channelData, setChannelData] =
-    useState<DataWithScrollModifier<PatchTypeWithKey> | null>(null);
+  const [entries, setChannelData] = useState<PatchTypeWithKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const { setEntries, reset } = useEntries();
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const prevEntriesLengthRef = useRef(0);
 
   useEffect(() => {
     setLoading(true);
-    setChannelData(null);
+    setChannelData([]);
     reset();
+    setShouldAutoScroll(true);
   }, [attempt.id, reset]);
 
   const onEntriesUpdated = (
@@ -92,47 +37,84 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
     addType: AddEntryType,
     newLoading: boolean
   ) => {
-    let scrollModifier: ScrollModifier = InitialDataScrollModifier;
+    setChannelData(newEntries);
+    setEntries(newEntries);
 
-    if (addType === 'running' && !loading) {
-      scrollModifier = AutoScrollToBottom;
+    // Auto-scroll to bottom when new entries are added during running state
+    if (addType === 'running' && !loading && shouldAutoScroll) {
+      // Delay scroll to allow DOM to update
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: newEntries.length - 1,
+          behavior: 'smooth',
+          align: 'end',
+        });
+      }, 50);
     }
 
-    setChannelData({ data: newEntries, scrollModifier });
-    setEntries(newEntries);
+    // Scroll to bottom when initial data loads
+    if (loading && !newLoading && newEntries.length > 0) {
+      setTimeout(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: newEntries.length - 1,
+          behavior: 'auto',
+          align: 'end',
+        });
+      }, 100);
+    }
 
     if (loading) {
       setLoading(newLoading);
     }
+
+    prevEntriesLengthRef.current = newEntries.length;
   };
 
   useConversationHistory({ attempt, onEntriesUpdated });
 
-  const messageListRef = useRef<VirtuosoMessageListMethods | null>(null);
   const messageListContext = useMemo(
     () => ({ attempt, task }),
     [attempt, task]
   );
 
+  const itemContent = (_index: number, data: PatchTypeWithKey) => {
+    if (data.type === 'STDOUT') {
+      return <p>{data.content}</p>;
+    }
+    if (data.type === 'STDERR') {
+      return <p>{data.content}</p>;
+    }
+    if (data.type === 'NORMALIZED_ENTRY' && messageListContext.attempt) {
+      return (
+        <DisplayConversationEntry
+          expansionKey={data.patchKey}
+          entry={data.content}
+          executionProcessId={data.executionProcessId}
+          taskAttempt={messageListContext.attempt}
+          task={messageListContext.task}
+        />
+      );
+    }
+
+    return null;
+  };
+
   return (
     <ApprovalFormProvider>
-      <VirtuosoMessageListLicense
-        licenseKey={import.meta.env.VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY}
-      >
-        <VirtuosoMessageList<PatchTypeWithKey, MessageListContext>
-          ref={messageListRef}
-          className="flex-1"
-          data={channelData}
-          initialLocation={INITIAL_TOP_ITEM}
-          context={messageListContext}
-          computeItemKey={computeItemKey}
-          ItemContent={ItemContent}
-          Header={() => <div className="h-2"></div>}
-          Footer={() => <div className="h-2"></div>}
-        />
-      </VirtuosoMessageListLicense>
+      <Virtuoso
+        ref={virtuosoRef}
+        className="flex-1"
+        data={entries}
+        itemContent={itemContent}
+        computeItemKey={(_index, data) => `l-${data.patchKey}`}
+        components={{
+          Header: () => <div className="h-2"></div>,
+          Footer: () => <div className="h-2"></div>,
+        }}
+        followOutput="smooth"
+      />
       {loading && (
-        <div className="float-left top-0 left-0 w-full h-full bg-primary flex flex-col gap-2 justify-center items-center">
+        <div className="absolute top-0 left-0 w-full h-full bg-primary flex flex-col gap-2 justify-center items-center">
           <Loader2 className="h-8 w-8 animate-spin" />
           <p>Loading History</p>
         </div>
