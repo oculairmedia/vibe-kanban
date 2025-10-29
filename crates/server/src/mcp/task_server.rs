@@ -994,6 +994,109 @@ impl TaskServer {
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
+
+    #[tool(
+        description = "Get all artifacts (git diffs, commits, execution logs) for a task attempt. Returns work products from execution processes including code changes, commit messages, and process outputs. Useful for reviewing what work was done during an attempt. `attempt_id` is required!"
+    )]
+    async fn get_attempt_artifacts(&self, request: GetAttemptArtifactsRequest) -> McpResult<String> {
+        let mut url = self.url(&format!("/api/task-attempts/{}/artifacts", request.attempt_id));
+
+        // Add query parameters
+        let mut params = vec![];
+        if let Some(artifact_type) = &request.artifact_type {
+            params.push(format!("artifact_type={}", artifact_type));
+        }
+        if let Some(limit) = request.limit {
+            params.push(format!("limit={}", limit));
+        }
+        if let Some(offset) = request.offset {
+            params.push(format!("offset={}", offset));
+        }
+
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
+        // Define local response type matching the API
+        #[derive(Debug, Deserialize)]
+        struct ApiArtifact {
+            artifact_type: String,
+            process_id: String,
+            content: Option<String>,
+            size_bytes: usize,
+            commit_sha: Option<String>,
+            commit_subject: Option<String>,
+            before_commit: Option<String>,
+            after_commit: Option<String>,
+        }
+
+        #[derive(Debug, Deserialize)]
+        struct ApiArtifactsResponse {
+            attempt_id: String,
+            artifacts: Vec<ApiArtifact>,
+            total_count: usize,
+        }
+
+        let api_response: ApiArtifactsResponse = self.send_json(self.client.get(&url)).await?;
+
+        // Convert to MCP response format
+        let artifacts: Vec<ArtifactSummary> = api_response
+            .artifacts
+            .into_iter()
+            .map(|artifact| ArtifactSummary {
+                artifact_type: artifact.artifact_type,
+                process_id: artifact.process_id,
+                content: artifact.content,
+                size_bytes: artifact.size_bytes,
+                commit_sha: artifact.commit_sha,
+                commit_subject: artifact.commit_subject,
+                before_commit: artifact.before_commit,
+                after_commit: artifact.after_commit,
+            })
+            .collect();
+
+        let response = GetAttemptArtifactsResponse {
+            attempt_id: api_response.attempt_id,
+            artifacts,
+            total_count: api_response.total_count,
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
+    #[tool(
+        description = "Create a GitHub pull request for a completed task attempt. The PR will be created from the attempt's branch to the target branch, with the task details included in the PR description. Returns the PR URL on success. `attempt_id` and `title` are required!"
+    )]
+    async fn create_github_pr(&self, request: CreateGitHubPrRequest) -> McpResult<String> {
+        let url = self.url(&format!("/api/task-attempts/{}/pr", request.attempt_id));
+
+        #[derive(Serialize)]
+        struct PrPayload {
+            title: String,
+            body: Option<String>,
+            target_branch: Option<String>,
+        }
+
+        let payload = PrPayload {
+            title: request.title.clone(),
+            body: request.body.clone(),
+            target_branch: request.target_branch.clone(),
+        };
+
+        // POST to PR endpoint returns ApiResponse<String> where String is the PR URL
+        let pr_url: String = self.send_json(self.client.post(&url).json(&payload)).await?;
+
+        let response = CreateGitHubPrResponse {
+            success: true,
+            pr_url: pr_url.clone(),
+            message: format!("GitHub PR created successfully: {}", pr_url),
+            attempt_id: request.attempt_id.to_string(),
+        };
+
+        Ok(serde_json::to_string_pretty(&response).unwrap())
+    }
+
     #[tool(
         description = "Rebase a task attempt branch onto the latest target branch. This updates the attempt with the latest changes from the target branch. Detects and reports any merge conflicts that need manual resolution. Use the `old_base_branch` and `new_base_branch` parameters to rebase onto a different branch. `attempt_id` is required!"
     )]
