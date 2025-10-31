@@ -31,6 +31,12 @@ pub struct Project {
     pub cleanup_script: Option<String>,
     pub copy_files: Option<String>,
 
+    // Letta agent tracking
+    pub letta_agent_id: Option<String>,
+    pub letta_folder_id: Option<String>,
+    pub letta_source_id: Option<String>,
+    pub letta_last_sync_at: Option<i64>,
+
     #[ts(type = "Date")]
     pub created_at: DateTime<Utc>,
     #[ts(type = "Date")]
@@ -46,6 +52,10 @@ pub struct CreateProject {
     pub dev_script: Option<String>,
     pub cleanup_script: Option<String>,
     pub copy_files: Option<String>,
+    pub letta_agent_id: Option<String>,
+    pub letta_folder_id: Option<String>,
+    pub letta_source_id: Option<String>,
+    pub letta_last_sync_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -56,6 +66,10 @@ pub struct UpdateProject {
     pub dev_script: Option<String>,
     pub cleanup_script: Option<String>,
     pub copy_files: Option<String>,
+    pub letta_agent_id: Option<String>,
+    pub letta_folder_id: Option<String>,
+    pub letta_source_id: Option<String>,
+    pub letta_last_sync_at: Option<i64>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -82,7 +96,7 @@ impl Project {
     pub async fn find_all(pool: &SqlitePool) -> Result<Vec<Self>, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects ORDER BY created_at DESC"#
+            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects ORDER BY created_at DESC"#
         )
         .fetch_all(pool)
         .await
@@ -93,7 +107,8 @@ impl Project {
         sqlx::query_as!(
             Project,
             r#"
-            SELECT p.id as "id!: Uuid", p.name, p.git_repo_path, p.setup_script, p.dev_script, p.cleanup_script, p.copy_files, 
+            SELECT p.id as "id!: Uuid", p.name, p.git_repo_path, p.setup_script, p.dev_script, p.cleanup_script, p.copy_files,
+                   p.letta_agent_id, p.letta_folder_id, p.letta_source_id, p.letta_last_sync_at,
                    p.created_at as "created_at!: DateTime<Utc>", p.updated_at as "updated_at!: DateTime<Utc>"
             FROM projects p
             WHERE p.id IN (
@@ -113,7 +128,7 @@ impl Project {
     pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE id = $1"#,
+            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE id = $1"#,
             id
         )
         .fetch_optional(pool)
@@ -126,7 +141,7 @@ impl Project {
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE git_repo_path = $1"#,
+            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE git_repo_path = $1"#,
             git_repo_path
         )
         .fetch_optional(pool)
@@ -140,7 +155,7 @@ impl Project {
     ) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE git_repo_path = $1 AND id != $2"#,
+            r#"SELECT id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>" FROM projects WHERE git_repo_path = $1 AND id != $2"#,
             git_repo_path,
             exclude_id
         )
@@ -155,14 +170,18 @@ impl Project {
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"INSERT INTO projects (id, name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"INSERT INTO projects (id, name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             project_id,
             data.name,
             data.git_repo_path,
             data.setup_script,
             data.dev_script,
             data.cleanup_script,
-            data.copy_files
+            data.copy_files,
+            data.letta_agent_id,
+            data.letta_folder_id,
+            data.letta_source_id,
+            data.letta_last_sync_at
         )
         .fetch_one(pool)
         .await
@@ -178,17 +197,25 @@ impl Project {
         dev_script: Option<String>,
         cleanup_script: Option<String>,
         copy_files: Option<String>,
+        letta_agent_id: Option<String>,
+        letta_folder_id: Option<String>,
+        letta_source_id: Option<String>,
+        letta_last_sync_at: Option<i64>,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Project,
-            r#"UPDATE projects SET name = $2, git_repo_path = $3, setup_script = $4, dev_script = $5, cleanup_script = $6, copy_files = $7 WHERE id = $1 RETURNING id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
+            r#"UPDATE projects SET name = $2, git_repo_path = $3, setup_script = $4, dev_script = $5, cleanup_script = $6, copy_files = $7, letta_agent_id = $8, letta_folder_id = $9, letta_source_id = $10, letta_last_sync_at = $11 WHERE id = $1 RETURNING id as "id!: Uuid", name, git_repo_path, setup_script, dev_script, cleanup_script, copy_files, letta_agent_id, letta_folder_id, letta_source_id, letta_last_sync_at, created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             name,
             git_repo_path,
             setup_script,
             dev_script,
             cleanup_script,
-            copy_files
+            copy_files,
+            letta_agent_id,
+            letta_folder_id,
+            letta_source_id,
+            letta_last_sync_at
         )
         .fetch_one(pool)
         .await
@@ -215,4 +242,80 @@ impl Project {
 
         Ok(result.count > 0)
     }
+
+    /// Get Letta agent information for a project by ID
+    pub async fn get_letta_info(pool: &SqlitePool, id: Uuid) -> Result<Option<LettaInfo>, sqlx::Error> {
+        let result = sqlx::query_as!(
+            LettaInfo,
+            r#"
+                SELECT
+                    letta_agent_id as "agent_id",
+                    letta_folder_id as "folder_id",
+                    letta_source_id as "source_id",
+                    letta_last_sync_at as "last_sync_at"
+                FROM projects
+                WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Set Letta agent information for a project
+    pub async fn set_letta_agent(
+        pool: &SqlitePool,
+        id: Uuid,
+        agent_id: String,
+        folder_id: Option<String>,
+        source_id: Option<String>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"
+                UPDATE projects
+                SET letta_agent_id = $2, letta_folder_id = $3, letta_source_id = $4
+                WHERE id = $1
+            "#,
+            id,
+            agent_id,
+            folder_id,
+            source_id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update the last sync timestamp for a project's Letta agent
+    pub async fn set_letta_sync_at(
+        pool: &SqlitePool,
+        id: Uuid,
+        timestamp: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            r#"
+                UPDATE projects
+                SET letta_last_sync_at = $2
+                WHERE id = $1
+            "#,
+            id,
+            timestamp
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+/// Letta agent information for a project
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct LettaInfo {
+    pub agent_id: Option<String>,
+    pub folder_id: Option<String>,
+    pub source_id: Option<String>,
+    pub last_sync_at: Option<i64>,
 }
