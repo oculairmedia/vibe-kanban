@@ -258,9 +258,9 @@ ORDER BY t.created_at DESC"#,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             Task,
-            r#"UPDATE tasks 
-               SET title = $3, description = $4, status = $5, parent_task_attempt = $6 
-               WHERE id = $1 AND project_id = $2 
+            r#"UPDATE tasks
+               SET title = $3, description = $4, status = $5, parent_task_attempt = $6, updated_at = datetime('now', 'subsec')
+               WHERE id = $1 AND project_id = $2
                RETURNING id as "id!: Uuid", project_id as "project_id!: Uuid", title, description, status as "status!: TaskStatus", parent_task_attempt as "parent_task_attempt: Uuid", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             project_id,
