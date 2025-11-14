@@ -50,11 +50,11 @@ USER appuser
 
 # Set runtime environment
 ENV HOST=0.0.0.0
-ENV MCP_PORT=3457
+ENV MCP_PORT=9718
 ENV TRANSPORT=http
 ENV RUST_LOG=info
 
-EXPOSE 3457
+EXPOSE 9718
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

@@ -7,18 +7,18 @@ services:
       dockerfile: Dockerfile.mcp-task
     container_name: vibe-mcp-task
     ports:
-      - "3456:3456"
+      - "9717:9717"
     environment:
       - HOST=0.0.0.0
-      - MCP_PORT=3456
+      - MCP_PORT=9717
       - TRANSPORT=http
       - RUST_LOG=info
-      - VIBE_BACKEND_URL=http://host.docker.internal:3000
+      - VIBE_BACKEND_URL=http://host.docker.internal:3105
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3456/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9717/health"]
       interval: 30s
       timeout: 3s
       start_period: 5s
@@ -30,18 +30,18 @@ services:
       dockerfile: Dockerfile.mcp-system
     container_name: vibe-mcp-system
     ports:
-      - "3457:3457"
+      - "9718:9718"
     environment:
       - HOST=0.0.0.0
-      - MCP_PORT=3457
+      - MCP_PORT=9718
       - TRANSPORT=http
       - RUST_LOG=info
-      - VIBE_BACKEND_URL=http://host.docker.internal:3000
+      - VIBE_BACKEND_URL=http://host.docker.internal:3105
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3457/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9718/health"]
       interval: 30s
       timeout: 3s
       start_period: 5s
