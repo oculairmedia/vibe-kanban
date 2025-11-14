@@ -21,6 +21,7 @@ WORKDIR /app
 # Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY assets ./assets
 
 # Configure git to use https for GitHub (public repos don't need auth)
 RUN git config --global url."https://github.com/".insteadOf git@github.com:

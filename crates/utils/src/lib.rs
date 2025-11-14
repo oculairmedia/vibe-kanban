@@ -1,6 +1,7 @@
 use std::{env, sync::OnceLock};
 
 use directories::ProjectDirs;
+use rust_embed::RustEmbed;
 
 pub mod approvals;
 pub mod assets;
