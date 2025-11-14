@@ -27,6 +27,8 @@ COPY assets ./assets
 RUN git config --global url."https://github.com/".insteadOf git@github.com:
 
 # Build the MCP system server binary without the codex feature (to avoid codex-protocol compilation errors)
+# Use SQLx offline mode since we don't have a database at build time
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin mcp_system_server
 
 # Runtime stage
