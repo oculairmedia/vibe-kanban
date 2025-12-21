@@ -1,8 +1,7 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
-    project::Project,
     task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     task_attempt::TaskAttempt,
 };
@@ -10,6 +9,21 @@ use turbomcp::prelude::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
+
+/// API response struct for Project that matches the NPX backend schema
+/// This is separate from db::models::Project to handle schema differences
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApiProject {
+    pub id: Uuid,
+    pub name: String,
+    pub dev_script: Option<String>,
+    pub dev_script_working_dir: Option<String>,
+    pub default_agent_working_dir: Option<String>,
+    pub remote_project_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 use crate::routes::task_attempts::{
     CreateTaskAttemptBody,
@@ -71,14 +85,14 @@ pub struct ProjectSummary {
     pub id: String,
     #[schemars(description = "The name of the project")]
     pub name: String,
-    #[schemars(description = "The path to the git repository")]
-    pub git_repo_path: PathBuf,
-    #[schemars(description = "Optional setup script for the project")]
-    pub setup_script: Option<String>,
-    #[schemars(description = "Optional cleanup script for the project")]
-    pub cleanup_script: Option<String>,
     #[schemars(description = "Optional development script for the project")]
     pub dev_script: Option<String>,
+    #[schemars(description = "Working directory for the development script")]
+    pub dev_script_working_dir: Option<String>,
+    #[schemars(description = "Default working directory for agents")]
+    pub default_agent_working_dir: Option<String>,
+    #[schemars(description = "Remote project ID if synced")]
+    pub remote_project_id: Option<String>,
     #[schemars(description = "When the project was created")]
     pub created_at: String,
     #[schemars(description = "When the project was last updated")]
@@ -86,14 +100,14 @@ pub struct ProjectSummary {
 }
 
 impl ProjectSummary {
-    fn from_project(project: Project) -> Self {
+    fn from_api_project(project: ApiProject) -> Self {
         Self {
             id: project.id.to_string(),
             name: project.name,
-            git_repo_path: project.git_repo_path,
-            setup_script: project.setup_script,
-            cleanup_script: project.cleanup_script,
             dev_script: project.dev_script,
+            dev_script_working_dir: project.dev_script_working_dir,
+            default_agent_working_dir: project.default_agent_working_dir,
+            remote_project_id: project.remote_project_id.map(|id| id.to_string()),
             created_at: project.created_at.to_rfc3339(),
             updated_at: project.updated_at.to_rfc3339(),
         }
@@ -924,11 +938,11 @@ impl TaskServer {
     #[tool(description = "List all the available projects")]
     async fn list_projects(&self) -> McpResult<String> {
         let url = self.url("/api/projects");
-        let projects: Vec<Project> = self.send_json(self.client.get(&url)).await?;
+        let projects: Vec<ApiProject> = self.send_json(self.client.get(&url)).await?;
 
         let project_summaries: Vec<ProjectSummary> = projects
             .into_iter()
-            .map(ProjectSummary::from_project)
+            .map(ProjectSummary::from_api_project)
             .collect();
 
         let response = ListProjectsResponse {

@@ -27,14 +27,20 @@ pub enum ThemeMode {
     System,
 }
 
+/// Config struct that handles v7 and v8 formats from the API
+/// Uses #[serde(default)] on newer fields for backward compatibility
 #[derive(Clone, Debug, Serialize, Deserialize, TS, schemars::JsonSchema)]
 pub struct Config {
     pub config_version: String,
     pub theme: ThemeMode,
     pub executor_profile: ExecutorProfileId,
+    #[serde(default)]
     pub disclaimer_acknowledged: bool,
+    #[serde(default)]
     pub onboarding_acknowledged: bool,
+    #[serde(default)]
     pub github_login_acknowledged: bool,
+    #[serde(default)]
     pub telemetry_acknowledged: bool,
     pub notifications: NotificationConfig,
     pub editor: EditorConfig,
@@ -42,6 +48,7 @@ pub struct Config {
     pub analytics_enabled: Option<bool>,
     pub workspace_dir: Option<String>,
     pub last_app_version: Option<String>,
+    #[serde(default)]
     pub show_release_notes: bool,
     #[serde(default)]
     pub language: UiLanguage,
@@ -49,6 +56,11 @@ pub struct Config {
     pub git_branch_prefix: String,
     #[serde(default)]
     pub showcases: ShowcaseState,
+    // v8 fields - optional for backward compatibility
+    #[serde(default)]
+    pub pr_auto_description_enabled: Option<bool>,
+    #[serde(default)]
+    pub pr_auto_description_prompt: Option<String>,
 }
 
 impl Config {
@@ -99,6 +111,8 @@ impl Config {
             language: old_config.language,
             git_branch_prefix: default_git_branch_prefix(),
             showcases: ShowcaseState::default(),
+            pr_auto_description_enabled: None,
+            pr_auto_description_prompt: None,
         })
     }
 }
@@ -144,6 +158,8 @@ impl Default for Config {
             language: UiLanguage::default(),
             git_branch_prefix: default_git_branch_prefix(),
             showcases: ShowcaseState::default(),
+            pr_auto_description_enabled: None,
+            pr_auto_description_prompt: None,
         }
     }
 }
