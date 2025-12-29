@@ -179,4 +179,179 @@ mod filesystem_tests {
         // Should not find deep repo due to depth limit
         assert!(!repo_names.contains(&"deep_repo".to_string()));
     }
+
+    // ============================================================================
+    // list_directory tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_list_directory_returns_entries() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create test structure
+        create_dir_structure(base_path, "folder1");
+        create_dir_structure(base_path, "folder2");
+        fs::write(base_path.join("file1.txt"), "content").unwrap();
+        fs::write(base_path.join("file2.rs"), "fn main() {}").unwrap();
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.current_path, base_path.to_string_lossy().to_string());
+        
+        let names: Vec<&str> = result.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"folder1"));
+        assert!(names.contains(&"folder2"));
+        assert!(names.contains(&"file1.txt"));
+        assert!(names.contains(&"file2.rs"));
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_directories_first() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create mixed content - files named to sort before directories alphabetically
+        create_dir_structure(base_path, "zebra_folder");
+        fs::write(base_path.join("alpha_file.txt"), "content").unwrap();
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        // Directories should come first regardless of alphabetical order
+        assert!(result.entries[0].is_directory);
+        assert_eq!(result.entries[0].name, "zebra_folder");
+        assert!(!result.entries[1].is_directory);
+        assert_eq!(result.entries[1].name, "alpha_file.txt");
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_identifies_git_repos() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create a regular folder and a git repo
+        create_dir_structure(base_path, "regular_folder");
+        create_git_repo(base_path, "git_repo");
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        let git_entry = result.entries.iter().find(|e| e.name == "git_repo").unwrap();
+        let regular_entry = result.entries.iter().find(|e| e.name == "regular_folder").unwrap();
+
+        assert!(git_entry.is_git_repo);
+        assert!(git_entry.is_directory);
+        assert!(!regular_entry.is_git_repo);
+        assert!(regular_entry.is_directory);
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_skips_hidden_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create visible and hidden content
+        create_dir_structure(base_path, "visible_folder");
+        create_dir_structure(base_path, ".hidden_folder");
+        fs::write(base_path.join("visible_file.txt"), "content").unwrap();
+        fs::write(base_path.join(".hidden_file"), "secret").unwrap();
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        let names: Vec<&str> = result.entries.iter().map(|e| e.name.as_str()).collect();
+        
+        // Should include visible items
+        assert!(names.contains(&"visible_folder"));
+        assert!(names.contains(&"visible_file.txt"));
+        
+        // Should skip hidden items
+        assert!(!names.contains(&".hidden_folder"));
+        assert!(!names.contains(&".hidden_file"));
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_empty_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Empty directory (temp_dir is already empty)
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        assert!(result.entries.is_empty());
+        assert_eq!(result.current_path, base_path.to_string_lossy().to_string());
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_nonexistent_path() {
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some("/nonexistent/path/that/does/not/exist".to_string()))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_file_not_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("not_a_directory.txt");
+        fs::write(&file_path, "content").unwrap();
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(file_path.to_string_lossy().to_string()))
+            .await;
+
+        // Should error when trying to list a file as a directory
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_alphabetical_within_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create folders in non-alphabetical order
+        create_dir_structure(base_path, "charlie");
+        create_dir_structure(base_path, "alpha");
+        create_dir_structure(base_path, "bravo");
+        
+        // Create files in non-alphabetical order
+        fs::write(base_path.join("zebra.txt"), "z").unwrap();
+        fs::write(base_path.join("apple.txt"), "a").unwrap();
+
+        let filesystem_service = FilesystemService::new();
+        let result = filesystem_service
+            .list_directory(Some(base_path.to_string_lossy().to_string()))
+            .await
+            .unwrap();
+
+        // Directories should be first, sorted alphabetically
+        assert_eq!(result.entries[0].name, "alpha");
+        assert_eq!(result.entries[1].name, "bravo");
+        assert_eq!(result.entries[2].name, "charlie");
+        
+        // Then files, sorted alphabetically
+        assert_eq!(result.entries[3].name, "apple.txt");
+        assert_eq!(result.entries[4].name, "zebra.txt");
+    }
 }
