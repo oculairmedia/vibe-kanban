@@ -418,6 +418,36 @@ impl TaskServer {
             .ok_or_else(|| Self::err("VK API response missing data field", None).unwrap())
     }
 
+    /// Send a request that doesn't expect data in the response (e.g., DELETE operations)
+    /// Returns Ok(()) on success, Err on failure
+    async fn send_no_data(&self, rb: reqwest::RequestBuilder) -> Result<(), McpError> {
+        let resp = rb
+            .send()
+            .await
+            .map_err(|e| Self::err_str("Failed to connect to VK API", Some(&e.to_string())))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            return Err(Self::err_str(
+                &format!("VK API returned error status: {}", status),
+                None,
+            ));
+        }
+
+        // Parse response to check success field, but ignore data
+        let api_response = resp
+            .json::<ApiResponseEnvelope<serde_json::Value>>()
+            .await
+            .map_err(|e| Self::err_str("Failed to parse VK API response", Some(&e.to_string())))?;
+
+        if !api_response.success {
+            let msg = api_response.message.as_deref().unwrap_or("Unknown error");
+            return Err(Self::err_str("VK API returned error", Some(msg)));
+        }
+
+        Ok(())
+    }
+
     fn url(&self, path: &str) -> String {
         format!(
             "{}/{}",
@@ -776,12 +806,7 @@ impl TaskServer {
         Parameters(DeleteTaskRequest { task_id }): Parameters<DeleteTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let url = self.url(&format!("/api/tasks/{}", task_id));
-        if let Err(e) = self
-            .send_json::<serde_json::Value>(self.client.delete(&url))
-            .await
-        {
-            return Ok(e);
-        }
+        self.send_no_data(self.client.delete(&url)).await?;
 
         let repsonse = DeleteTaskResponse {
             deleted_task_id: Some(task_id.to_string()),
