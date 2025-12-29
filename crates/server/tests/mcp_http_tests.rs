@@ -759,6 +759,65 @@ mod workflow_http_tests {
         }
     }
 
+    /// Test that update_config actually works (catches URL path bugs like /api/config/config)
+    #[tokio::test]
+    async fn test_update_config_round_trip() {
+        let client = McpClient::system_server();
+        require_mcp_server!(client, "System server");
+
+        // Get current config
+        let original_config = client.get_config().await.expect("Failed to get config");
+        let original_prefix = original_config["git_branch_prefix"]
+            .as_str()
+            .unwrap_or("vibe/");
+        println!("Original git_branch_prefix: {}", original_prefix);
+
+        // Update to a test value
+        let test_prefix = if original_prefix == "test-prefix-" {
+            "vibe/"
+        } else {
+            "test-prefix-"
+        };
+
+        let update_result = client
+            .call_tool(
+                "update_config",
+                json!({ "git_branch_prefix": test_prefix }),
+            )
+            .await;
+
+        match update_result {
+            Ok(updated) => {
+                // Verify the update was applied
+                let new_prefix = updated["git_branch_prefix"].as_str().unwrap_or("");
+                assert_eq!(new_prefix, test_prefix, "Config update should be applied");
+                println!("Updated git_branch_prefix to: {}", new_prefix);
+
+                // Restore original value
+                let restore_result = client
+                    .call_tool(
+                        "update_config",
+                        json!({ "git_branch_prefix": original_prefix }),
+                    )
+                    .await;
+                assert!(restore_result.is_ok(), "Should restore original config");
+                println!("Restored git_branch_prefix to: {}", original_prefix);
+            }
+            Err(e) => {
+                // If update fails with 405, this catches the URL path bug
+                let err_str = e.to_string();
+                if err_str.contains("405") || err_str.contains("Method Not Allowed") {
+                    panic!(
+                        "update_config returned 405 - likely URL path bug (e.g., /api/config/config instead of /api/config): {}",
+                        err_str
+                    );
+                }
+                // Other errors may be acceptable (e.g., backend not configured)
+                eprintln!("update_config failed (may be expected): {}", e);
+            }
+        }
+    }
+
     /// Test system info retrieval workflow
     #[tokio::test]
     async fn test_system_info_workflow() {

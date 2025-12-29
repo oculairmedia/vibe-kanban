@@ -337,7 +337,7 @@ impl SystemServer {
         }
 
         // Send update
-        let url = self.url("/api/config/config");
+        let url = self.url("/api/config");
         self.send_json(self.client.put(&url).json(&config)).await
     }
 }
