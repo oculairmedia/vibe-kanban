@@ -21,11 +21,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
 # Build the MCP system server binary
-# Use system SQLite library with pre-generated bindings (skip bindgen)
-ENV SQLITE3_INCLUDE_DIR=/usr/include
-ENV SQLITE3_LIB_DIR=/usr/lib
-ENV LIBSQLITE3_SYS_USE_PKG_CONFIG=1
-ENV LIBSQLITE3_SYS_USE_BUNDLED_BINDINGS=1
+# Use SQLX_OFFLINE to skip compile-time SQL checks (avoids bindgen/libclang issues on musl)
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin mcp_system_server
 
 # Runtime stage
