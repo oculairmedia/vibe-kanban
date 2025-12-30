@@ -5,10 +5,8 @@ edition = "2024"
 
 [features]
 default = []
-bundled-sqlite = ["dep:libsqlite3-sys", "libsqlite3-sys/bundled"]
 
 [dependencies]
-libsqlite3-sys = { version = "0.30", optional = true }
 utils = { path = "../utils" }
 executors = { path = "../executors" }
 thiserror = { workspace = true }
