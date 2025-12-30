@@ -3,7 +3,12 @@ name = "db"
 version = "0.0.143"
 edition = "2024"
 
+[features]
+default = []
+bundled-sqlite = ["libsqlite3-sys/bundled"]
+
 [dependencies]
+libsqlite3-sys = { version = "0.30", optional = true }
 utils = { path = "../utils" }
 executors = { path = "../executors" }
 thiserror = { workspace = true }
