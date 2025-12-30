@@ -1,17 +1,13 @@
-# Build stage
-FROM rustlang/rust:nightly-alpine AS builder
+# Build stage - use Debian for better SQLite/bindgen compatibility
+FROM rustlang/rust:nightly-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache \
-    musl-dev \
-    openssl-dev \
-    openssl-libs-static \
-    pkgconfig \
-    perl \
-    make \
-    clang \
-    clang-dev \
-    sqlite-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl-dev \
+    pkg-config \
+    libsqlite3-dev \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -25,14 +21,15 @@ COPY crates ./crates
 ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin mcp_task_server
 
-# Runtime stage
-FROM alpine:latest AS runtime
+# Runtime stage - use slim Debian for smaller image
+FROM debian:bookworm-slim AS runtime
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     tini \
-    libgcc
+    libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create app user for security
 RUN addgroup -g 1001 -S appgroup && \
