@@ -464,21 +464,11 @@ impl SystemServer {
 // Custom HTTP runner implementation with permissive security for development
 #[cfg(feature = "http")]
 impl SystemServer {
-    /// Run HTTP server with custom security configuration
+    /// Run HTTP server on the specified address
+    #[cfg(feature = "http")]
     pub async fn run_http_custom(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use turbomcp_transport::streamable_http_v2::{StreamableHttpConfigBuilder, run_server};
-        use std::time::Duration;
-
-        // Create permissive HTTP config for development
-        let config = StreamableHttpConfigBuilder::new()
-            .with_bind_address(addr)
-            .allow_any_origin(true) // Allow any origin in development mode
-            .allow_localhost(true)
-            .with_rate_limit(1_000_000, Duration::from_secs(60)) // Very high limit for development
-            .build();
-
-        // Run the HTTP server with custom config
-        run_server(config, Arc::new(self.clone())).await?;
+        // Use the generated run_http_with_path method from turbomcp macro
+        self.clone().run_http_with_path(addr, "/mcp").await?;
         Ok(())
     }
 }

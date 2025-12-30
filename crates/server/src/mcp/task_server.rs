@@ -2274,20 +2274,15 @@ impl TaskServer {
 // Custom HTTP runner implementation with permissive security for development
 #[cfg(feature = "http")]
 impl TaskServer {
-    /// Run HTTP server with custom security configuration
+    /// Run HTTP server with custom address and path
+    #[cfg(feature = "http")]
     pub async fn run_http_custom(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use turbomcp_transport::streamable_http::{StreamableHttpConfigBuilder};
-        use std::time::Duration;
-
-        // Create permissive HTTP config for development
+        use turbomcp::prelude::StreamableHttpConfigBuilder;
+        
         let config = StreamableHttpConfigBuilder::new()
-            .with_bind_address(addr)
-            .allow_any_origin(true) // Allow any origin in development mode
-            .allow_localhost(true)
-            .with_rate_limit(1_000_000, Duration::from_secs(60)) // Very high limit for development
+            .with_endpoint_path("/mcp")
             .build();
-
-        // Run the HTTP server with custom config (v2.3 API uses method on server)
+        
         self.run_http_with_config(addr, config).await?;
         Ok(())
     }

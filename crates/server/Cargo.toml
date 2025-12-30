@@ -7,6 +7,10 @@ default-run = "server"
 [lints.clippy]
 uninlined-format-args = "allow"
 
+[features]
+default = ["http"]
+http = ["turbomcp/http"]
+
 [dependencies]
 deployment = { path = "../deployment" }
 executors = { path = "../executors" }
@@ -31,6 +35,7 @@ ts-rs = { workspace = true }
 nix = { version = "0.29", features = ["signal", "process"] }
 openssl-sys = { workspace = true }
 turbomcp = { version = "2.3", features = ["http"] }
+turbomcp-transport = { version = "2.3", features = ["http"] }
 schemars = { workspace = true }
 secrecy = "0.10.3"
 sentry = { version = "0.41.0", features = ["anyhow", "backtrace", "panic", "debug-images"] }

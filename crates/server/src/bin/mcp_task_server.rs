@@ -10,8 +10,8 @@ use utils::{
     sentry::{self as sentry_utils, SentrySource, sentry_layer},
 };
 
-#[cfg(feature = "http")]
-use turbomcp::prelude::*;
+// Note: We don't use `use turbomcp::prelude::*` here to avoid name collision
+// with our `server` crate. The TaskServer uses turbomcp internally via its methods.
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

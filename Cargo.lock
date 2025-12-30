@@ -6008,6 +6008,7 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs 11.0.1",
  "turbomcp",
+ "turbomcp-transport",
  "url",
  "urlencoding",
  "utils",
