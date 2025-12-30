@@ -23,7 +23,7 @@ COPY crates ./crates
 # Build the MCP system server binary
 # Use SQLX_OFFLINE to skip compile-time SQL checks (avoids bindgen/libclang issues on musl)
 ENV SQLX_OFFLINE=true
-RUN cargo build --release --bin mcp_system_server
+RUN cargo build --release --bin mcp_system_server --features db/bundled-sqlite
 
 # Runtime stage
 FROM alpine:latest AS runtime
