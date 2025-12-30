@@ -7,6 +7,9 @@ RUN apk add --no-cache \
     openssl-dev \
     openssl-libs-static \
     pkgconfig \
+    clang \
+    clang-dev \
+    llvm-dev \
     perl \
     make
 
