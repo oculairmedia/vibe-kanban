@@ -22,7 +22,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY assets ./assets
-COPY .sqlx ./.sqlx
+COPY crates/db/.sqlx ./crates/db/.sqlx
 
 # Configure git to use https for GitHub (public repos don't need auth)
 RUN git config --global url."https://github.com/".insteadOf git@github.com:
