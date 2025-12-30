@@ -5,6 +5,8 @@ edition = "2024"
 
 [features]
 default = []
+# Enable bundled SQLite to avoid bindgen/libclang issues on musl
+bundled-sqlite = []
 
 [dependencies]
 utils = { path = "../utils" }
