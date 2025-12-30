@@ -31,3 +31,10 @@ async-trait = "0.1"
 debug = true
 split-debuginfo = "packed"
 strip = true
+
+[patch.crates-io]
+turbomcp = { git = "https://github.com/oculairmedia/turbomcp.git", branch = "feature/flatten-structs" }
+turbomcp-macros = { git = "https://github.com/oculairmedia/turbomcp.git", branch = "feature/flatten-structs" }
+turbomcp-protocol = { git = "https://github.com/oculairmedia/turbomcp.git", branch = "feature/flatten-structs" }
+turbomcp-server = { git = "https://github.com/oculairmedia/turbomcp.git", branch = "feature/flatten-structs" }
+turbomcp-transport = { git = "https://github.com/oculairmedia/turbomcp.git", branch = "feature/flatten-structs" }

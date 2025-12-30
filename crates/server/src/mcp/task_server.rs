@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
     task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
-    task_attempt::TaskAttempt,
+    workspace::Workspace,
 };
 use turbomcp::prelude::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -27,6 +27,7 @@ pub struct ApiProject {
 
 use crate::routes::task_attempts::{
     CreateTaskAttemptBody,
+    WorkspaceRepoInput,
     RebaseTaskAttemptRequest as ApiRebaseRequest,
     GitOperationError,
 };
@@ -248,10 +249,10 @@ pub struct TaskSummary {
     pub updated_at: String,
     #[schemars(description = "Whether the task has an in-progress execution attempt")]
     pub has_in_progress_attempt: Option<bool>,
-    #[schemars(description = "Whether the task has a merged execution attempt")]
-    pub has_merged_attempt: Option<bool>,
     #[schemars(description = "Whether the last execution attempt failed")]
     pub last_attempt_failed: Option<bool>,
+    #[schemars(description = "The executor used for the task")]
+    pub executor: Option<String>,
 }
 
 impl TaskSummary {
@@ -263,8 +264,8 @@ impl TaskSummary {
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: Some(task.has_in_progress_attempt),
-            has_merged_attempt: Some(task.has_merged_attempt),
             last_attempt_failed: Some(task.last_attempt_failed),
+            executor: Some(task.executor),
         }
     }
 }
@@ -285,10 +286,10 @@ pub struct TaskDetails {
     pub updated_at: String,
     #[schemars(description = "Whether the task has an in-progress execution attempt")]
     pub has_in_progress_attempt: Option<bool>,
-    #[schemars(description = "Whether the task has a merged execution attempt")]
-    pub has_merged_attempt: Option<bool>,
     #[schemars(description = "Whether the last execution attempt failed")]
     pub last_attempt_failed: Option<bool>,
+    #[schemars(description = "The executor used for the task")]
+    pub executor: Option<String>,
 }
 
 impl TaskDetails {
@@ -301,8 +302,8 @@ impl TaskDetails {
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: None,
-            has_merged_attempt: None,
             last_attempt_failed: None,
+            executor: None,
         }
     }
 }
@@ -344,6 +345,15 @@ pub struct DeleteTaskRequest {
     pub task_id: Uuid,
 }
 
+/// Input for specifying a repository and target branch for a workspace
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct McpWorkspaceRepoInput {
+    #[schemars(description = "The UUID of the repository")]
+    pub repo_id: Uuid,
+    #[schemars(description = "The target branch for this repository")]
+    pub target_branch: String,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct StartTaskAttemptRequest {
     #[schemars(description = "The ID of the task to start")]
@@ -354,8 +364,8 @@ pub struct StartTaskAttemptRequest {
     pub executor: String,
     #[schemars(description = "Optional executor variant, if needed")]
     pub variant: Option<String>,
-    #[schemars(description = "The base branch to use for the attempt")]
-    pub base_branch: String,
+    #[schemars(description = "List of repositories with target branches for this workspace. Each entry requires repo_id (UUID) and target_branch.")]
+    pub repos: Vec<McpWorkspaceRepoInput>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -397,20 +407,16 @@ pub struct ListTaskAttemptsRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct TaskAttemptSummary {
-    #[schemars(description = "The unique identifier of the attempt")]
+    #[schemars(description = "The unique identifier of the attempt (workspace)")]
     pub id: String,
     #[schemars(description = "The task ID this attempt belongs to")]
     pub task_id: String,
     #[schemars(description = "Git branch name for this attempt")]
     pub branch: String,
-    #[schemars(description = "Target branch for this attempt (PR destination)")]
-    pub target_branch: String,
-    #[schemars(description = "The executor used for this attempt (e.g., CLAUDE_CODE, GEMINI)")]
-    pub executor: String,
     #[schemars(description = "Path to worktree or container reference")]
     pub container_ref: Option<String>,
-    #[schemars(description = "Whether the worktree has been deleted")]
-    pub worktree_deleted: bool,
+    #[schemars(description = "Working directory for the agent within the worktree")]
+    pub agent_working_dir: Option<String>,
     #[schemars(description = "When setup script was completed")]
     pub setup_completed_at: Option<String>,
     #[schemars(description = "When the attempt was created")]
@@ -420,18 +426,16 @@ pub struct TaskAttemptSummary {
 }
 
 impl TaskAttemptSummary {
-    fn from_task_attempt(attempt: TaskAttempt) -> Self {
+    fn from_workspace(workspace: Workspace) -> Self {
         Self {
-            id: attempt.id.to_string(),
-            task_id: attempt.task_id.to_string(),
-            branch: attempt.branch,
-            target_branch: attempt.target_branch,
-            executor: attempt.executor,
-            container_ref: attempt.container_ref,
-            worktree_deleted: attempt.worktree_deleted,
-            setup_completed_at: attempt.setup_completed_at.map(|dt| dt.to_rfc3339()),
-            created_at: attempt.created_at.to_rfc3339(),
-            updated_at: attempt.updated_at.to_rfc3339(),
+            id: workspace.id.to_string(),
+            task_id: workspace.task_id.to_string(),
+            branch: workspace.branch,
+            container_ref: workspace.container_ref,
+            agent_working_dir: workspace.agent_working_dir,
+            setup_completed_at: workspace.setup_completed_at.map(|dt| dt.to_rfc3339()),
+            created_at: workspace.created_at.to_rfc3339(),
+            updated_at: workspace.updated_at.to_rfc3339(),
         }
     }
 }
@@ -494,6 +498,8 @@ pub struct MergeTaskAttemptResponse {
 pub struct RebaseTaskAttemptRequest {
     #[schemars(description = "The ID of the task attempt to rebase")]
     pub attempt_id: Uuid,
+    #[schemars(description = "The ID of the repo to rebase")]
+    pub repo_id: Uuid,
     #[schemars(description = "Optional old base branch (defaults to attempt's target branch)")]
     pub old_base_branch: Option<String>,
     #[schemars(description = "Optional new base branch (defaults to attempt's target branch)")]
@@ -536,18 +542,14 @@ pub struct GetExecutionProcessRequest {
 pub struct ExecutionProcessSummary {
     #[schemars(description = "The unique identifier of the execution process")]
     pub id: String,
-    #[schemars(description = "The task attempt ID this process belongs to")]
-    pub task_attempt_id: String,
+    #[schemars(description = "The session ID this process belongs to")]
+    pub session_id: String,
     #[schemars(description = "Why this process was run (e.g., SetupScript, CodingAgent, DevServer)")]
-    pub run_reason: ExecutionProcessRunReason,
+    pub run_reason: String,
     #[schemars(description = "Current execution status (Running, Completed, Failed, Killed)")]
-    pub status: ExecutionProcessStatus,
+    pub status: String,
     #[schemars(description = "Exit code if the process has completed")]
     pub exit_code: Option<i64>,
-    #[schemars(description = "Git commit hash before execution started")]
-    pub before_head_commit: Option<String>,
-    #[schemars(description = "Git commit hash after execution completed")]
-    pub after_head_commit: Option<String>,
     #[schemars(description = "Whether this process has been soft-deleted from history")]
     pub dropped: bool,
     #[schemars(description = "When the process started executing")]
@@ -566,12 +568,10 @@ impl ExecutionProcessSummary {
 
         Self {
             id: process.id.to_string(),
-            task_attempt_id: process.task_attempt_id.to_string(),
-            run_reason: process.run_reason,
-            status: process.status,
+            session_id: process.session_id.to_string(),
+            run_reason: format!("{:?}", process.run_reason),
+            status: format!("{:?}", process.status),
             exit_code: process.exit_code,
-            before_head_commit: process.before_head_commit,
-            after_head_commit: process.after_head_commit,
             dropped: process.dropped,
             started_at: process.started_at.to_rfc3339(),
             completed_at: process.completed_at.map(|dt| dt.to_rfc3339()),
@@ -1355,9 +1355,20 @@ impl TaskServer {
 
     #[tool(description = "Start working on a task by creating and launching a new task attempt.")]
     async fn start_task_attempt(&self, request: StartTaskAttemptRequest) -> McpResult<String> {
-        let base_branch = request.base_branch.trim().to_string();
-        if base_branch.is_empty() {
-            return Err(McpError::invalid_request("Base branch must not be empty."));
+        // Validate repos array
+        if request.repos.is_empty() {
+            return Err(McpError::invalid_request("At least one repository must be specified in the 'repos' array."));
+        }
+
+        // Validate each repo entry
+        for (i, repo) in request.repos.iter().enumerate() {
+            let target_branch = repo.target_branch.trim();
+            if target_branch.is_empty() {
+                return Err(McpError::invalid_request(format!(
+                    "target_branch must not be empty for repo at index {}",
+                    i
+                )));
+            }
         }
 
         let executor_trimmed = request.executor.trim();
@@ -1391,18 +1402,24 @@ impl TaskServer {
         let backend_executor_profile_id = serde_json::from_value(executor_json)
             .map_err(|e| McpError::internal(format!("Failed to deserialize executor: {}", e)))?;
 
+        // Convert MCP repo inputs to backend WorkspaceRepoInput
+        let repos: Vec<WorkspaceRepoInput> = request.repos.iter().map(|r| WorkspaceRepoInput {
+            repo_id: r.repo_id,
+            target_branch: r.target_branch.trim().to_string(),
+        }).collect();
+
         let payload = CreateTaskAttemptBody {
             task_id: request.task_id,
             executor_profile_id: backend_executor_profile_id,
-            base_branch,
+            repos,
         };
 
         let url = self.url("/api/task-attempts");
-        let attempt: TaskAttempt = self.send_json(self.client.post(&url).json(&payload)).await?;
+        let workspace: Workspace = self.send_json(self.client.post(&url).json(&payload)).await?;
 
         let response = StartTaskAttemptResponse {
-            task_id: attempt.task_id.to_string(),
-            attempt_id: attempt.id.to_string(),
+            task_id: workspace.task_id.to_string(),
+            attempt_id: workspace.id.to_string(),
         };
 
         Ok(serde_json::to_string_pretty(&response).unwrap())
@@ -1430,7 +1447,7 @@ impl TaskServer {
             title: request.title,
             description: request.description,
             status,
-            parent_task_attempt: None,
+            parent_workspace_id: None,
             image_ids: None,
         };
         let url = self.url(&format!("/api/tasks/{}", request.task_id));
@@ -1467,8 +1484,8 @@ impl TaskServer {
         // Optionally fetch attempts
         let attempts = if request.include_attempts.unwrap_or(false) {
             let attempts_url = self.url(&format!("/api/task-attempts?task_id={}", request.task_id));
-            let task_attempts: Vec<TaskAttempt> = self.send_json(self.client.get(&attempts_url)).await?;
-            Some(task_attempts.into_iter().map(TaskAttemptSummary::from_task_attempt).collect())
+            let workspaces: Vec<Workspace> = self.send_json(self.client.get(&attempts_url)).await?;
+            Some(workspaces.into_iter().map(TaskAttemptSummary::from_workspace).collect())
         } else {
             None
         };
@@ -1483,11 +1500,11 @@ impl TaskServer {
     )]
     async fn list_task_attempts(&self, request: ListTaskAttemptsRequest) -> McpResult<String> {
         let url = self.url(&format!("/api/task-attempts?task_id={}", request.task_id));
-        let attempts: Vec<TaskAttempt> = self.send_json(self.client.get(&url)).await?;
+        let workspaces: Vec<Workspace> = self.send_json(self.client.get(&url)).await?;
 
-        let attempt_summaries: Vec<TaskAttemptSummary> = attempts
+        let attempt_summaries: Vec<TaskAttemptSummary> = workspaces
             .into_iter()
-            .map(TaskAttemptSummary::from_task_attempt)
+            .map(TaskAttemptSummary::from_workspace)
             .collect();
 
         let response = ListTaskAttemptsResponse {
@@ -1504,9 +1521,9 @@ impl TaskServer {
     )]
     async fn get_task_attempt(&self, request: GetTaskAttemptRequest) -> McpResult<String> {
         let url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
-        let attempt: TaskAttempt = self.send_json(self.client.get(&url)).await?;
+        let workspace: Workspace = self.send_json(self.client.get(&url)).await?;
 
-        let attempt_summary = TaskAttemptSummary::from_task_attempt(attempt);
+        let attempt_summary = TaskAttemptSummary::from_workspace(workspace);
         
         // Optionally fetch execution processes
         let processes = if request.include_processes.unwrap_or(false) {
@@ -1547,11 +1564,11 @@ impl TaskServer {
             variant: request.variant,
         };
 
-        let attempt: TaskAttempt = self.send_json(self.client.post(&url).json(&payload)).await?;
+        let workspace: Workspace = self.send_json(self.client.post(&url).json(&payload)).await?;
 
         let response = CreateFollowupAttemptResponse {
-            task_id: attempt.task_id.to_string(),
-            attempt_id: attempt.id.to_string(),
+            task_id: workspace.task_id.to_string(),
+            attempt_id: workspace.id.to_string(),
             based_on_attempt_id: request.previous_attempt_id.to_string(),
         };
 
@@ -1569,7 +1586,7 @@ impl TaskServer {
 
         // Fetch the task attempt to get task_id for response
         let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
-        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+        let attempt: Workspace = self.send_json(self.client.get(&attempt_url)).await?;
 
         let response = MergeTaskAttemptResponse {
             success: true,
@@ -1690,6 +1707,7 @@ impl TaskServer {
     async fn rebase_task_attempt(&self, request: RebaseTaskAttemptRequest) -> McpResult<String> {
         // Prepare the rebase payload
         let payload = ApiRebaseRequest {
+            repo_id: request.repo_id,
             old_base_branch: request.old_base_branch,
             new_base_branch: request.new_base_branch,
         };
@@ -1714,7 +1732,7 @@ impl TaskServer {
 
         // Fetch the task attempt to get task_id for response
         let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
-        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+        let attempt: Workspace = self.send_json(self.client.get(&attempt_url)).await?;
 
         // Check if rebase succeeded or encountered conflicts
         let (success, has_conflicts, conflict_info, message) = if status_code.is_success() && api_response.success {
@@ -2202,7 +2220,7 @@ impl TaskServer {
 
         // Fetch the task attempt to get branch name for response
         let attempt_url = self.url(&format!("/api/task-attempts/{}", request.attempt_id));
-        let attempt: TaskAttempt = self.send_json(self.client.get(&attempt_url)).await?;
+        let attempt: Workspace = self.send_json(self.client.get(&attempt_url)).await?;
 
         let response = PushAttemptBranchResponse {
             success: true,
