@@ -14,7 +14,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "sqlite-preupdate-hook", "chrono", "uuid"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
 # Force bundled SQLite to avoid bindgen/libclang issues on musl
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
