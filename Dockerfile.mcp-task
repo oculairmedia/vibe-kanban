@@ -32,8 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -s /bin/false appuser
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/mcp_task_server /usr/local/bin/mcp_task_server
