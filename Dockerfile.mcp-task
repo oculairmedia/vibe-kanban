@@ -15,6 +15,7 @@ WORKDIR /app
 # Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY assets ./assets
 
 # Build the MCP task server binary
 # Use SQLX_OFFLINE to skip compile-time SQL checks (avoids bindgen/libclang issues on musl)
