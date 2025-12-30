@@ -34,13 +34,24 @@ fn validate_executor(executor: &str) -> Result<(), String> {
     }
 }
 
-// Minimal copy of ExecutorProfileId to avoid depending on executors crate
-// which has codex-protocol compilation issues
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-struct McpExecutorProfileId {
-    executor: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    variant: Option<String>,
+// Wrapper type for DirectoryEntry that implements schemars 1.0
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct DirectoryEntryWrapper {
+    pub name: String,
+    pub path: String,
+    pub is_directory: bool,
+    pub is_git_repo: bool,
+}
+
+impl From<DirectoryEntry> for DirectoryEntryWrapper {
+    fn from(entry: DirectoryEntry) -> Self {
+        Self {
+            name: entry.name,
+            path: entry.path.to_string_lossy().to_string(),
+            is_directory: entry.is_directory,
+            is_git_repo: entry.is_git_repo,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -64,9 +75,16 @@ pub struct GetSystemInfoResponse {
     pub system: SystemInfo,
 }
 
+// Wrapper for Config that implements schemars 1.0
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ConfigWrapper {
+    #[schemars(description = "The configuration as JSON")]
+    pub config_json: serde_json::Value,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct GetConfigResponse {
-    pub config: Config,
+    pub config: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -77,15 +95,13 @@ pub struct UpdateConfigRequest {
     pub executor_profile: Option<String>,
     #[schemars(description = "Enable analytics")]
     pub analytics_enabled: Option<bool>,
-    #[schemars(description = "Enable telemetry")]
-    pub telemetry_enabled: Option<bool>,
     #[schemars(description = "Preferred editor")]
     pub editor: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct UpdateConfigResponse {
-    pub config: Config,
+    pub config: serde_json::Value,
     pub message: String,
 }
 
@@ -136,7 +152,7 @@ pub struct ListGitReposRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ListGitReposResponse {
-    pub repositories: Vec<DirectoryEntry>,
+    pub repositories: Vec<DirectoryEntryWrapper>,
     pub count: usize,
     pub search_path: String,
 }
@@ -149,7 +165,7 @@ pub struct ListDirectoryRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ListDirectoryResponseWrapper {
-    pub entries: Vec<DirectoryEntry>,
+    pub entries: Vec<DirectoryEntryWrapper>,
     pub current_path: String,
     pub count: usize,
 }
@@ -161,50 +177,10 @@ pub struct HealthCheckResponse {
     pub uptime_seconds: Option<u64>,
 }
 
-// Simplified version for MCP deserialization (uses String instead of enum)
-#[derive(Debug, Serialize, Deserialize)]
-struct ExecutorProfileInfoSimple {
-    executor: String,
-    variant: String,
-    available: bool,
-    capabilities: Vec<String>,
-    supports_mcp: bool,
-    config_path: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ExecutorProfilesResponseSimple {
-    profiles: Vec<ExecutorProfileInfoSimple>,
-    count: usize,
-}
-
-// Request for getting a single executor profile
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-struct GetExecutorProfileRequest {
-    #[schemars(description = "The executor type (e.g., 'CLAUDE_CODE', 'AMP', 'CODEX'). Case-insensitive.")]
-    executor: String,
-    #[schemars(description = "Optional variant name (e.g., 'ROUTER', 'PLAN'). Defaults to 'DEFAULT' if not specified.")]
-    variant: Option<String>,
-}
-
-// Response for a single executor profile with full details
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
-struct ExecutorProfileDetailSimple {
-    executor: String,
-    variant: String,
-    available: bool,
-    capabilities: Vec<String>,
-    supports_mcp: bool,
-    config_path: Option<String>,
-    profile_id: String,
-    display_name: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct SystemServer {
     client: Arc<reqwest::Client>,
     base_url: Arc<String>,
-    filesystem_service: Arc<FilesystemService>,
     start_time: std::time::Instant,
 }
 
@@ -213,7 +189,6 @@ impl SystemServer {
         Self {
             client: Arc::new(reqwest::Client::new()),
             base_url: Arc::new(base_url.to_string()),
-            filesystem_service: Arc::new(FilesystemService::new()),
             start_time: std::time::Instant::now(),
         }
     }
@@ -273,85 +248,63 @@ impl SystemServer {
         )
     }
 
-    async fn get_config_from_api(&self) -> Result<Config, McpError> {
+    async fn get_config_from_api(&self) -> Result<serde_json::Value, McpError> {
         let url = self.url("/api/info");
-        
-        // Deserialize only the fields we need from UserSystemInfo
-        #[derive(Deserialize)]
-        struct UserSystemInfoPartial {
-            config: Config,
-        }
-        
-        let user_info: UserSystemInfoPartial = self.send_json(self.client.get(&url)).await?;
-        Ok(user_info.config)
+        self.send_json(self.client.get(&url)).await
     }
 
-    async fn update_config_via_api(&self, updates: UpdateConfigRequest) -> Result<Config, McpError> {
+    async fn update_config_via_api(&self, updates: UpdateConfigRequest) -> Result<serde_json::Value, McpError> {
         // First get current config
-        let mut config = self.get_config_from_api().await?;
+        let config: serde_json::Value = self.get_config_from_api().await?;
+        let mut config_obj = config.as_object().cloned().unwrap_or_default();
 
         // Apply updates
         if let Some(prefix) = updates.git_branch_prefix {
-            config.git_branch_prefix = prefix;
+            config_obj.insert("git_branch_prefix".to_string(), serde_json::Value::String(prefix));
         }
         if let Some(profile_str) = updates.executor_profile {
             // Parse executor profile string (format: "EXECUTOR" or "EXECUTOR:VARIANT")
             let parts: Vec<&str> = profile_str.split(':').collect();
             let executor_str = parts[0].trim().replace('-', "_").to_ascii_uppercase();
-            let variant = if parts.len() > 1 {
-                let v = parts[1].trim();
-                if v.is_empty() { None } else { Some(v.to_string()) }
-            } else {
-                None
-            };
 
             // Validate executor name against known executors
             if let Err(err_msg) = validate_executor(&executor_str) {
                 return Err(McpError::invalid_request(err_msg));
             }
 
-            // Create a local ExecutorProfileId that matches the backend's JSON format
-            let mcp_profile = McpExecutorProfileId {
-                executor: executor_str,
-                variant,
-            };
-
-            // Convert to JSON Value and then deserialize as the config's ExecutorProfileId type
-            // This works because both types serialize to the same JSON structure
-            let profile_json = serde_json::to_value(&mcp_profile)
-                .map_err(|e| McpError::internal(format!("Failed to serialize executor profile: {}", e)))?;
-            config.executor_profile = serde_json::from_value(profile_json)
-                .map_err(|e| McpError::internal(format!("Failed to convert executor profile: {}", e)))?;
+            // NOTE: We can't set config.executor_profile directly because we don't have
+            // access to executors::profile::ExecutorProfileId anymore. This functionality
+            // needs to be updated via the REST API instead, which still has executors dependency.
+            // For now, we return an error directing users to use the web UI or API.
+            return Err(McpError::invalid_request("Updating executor profile via MCP system server is temporarily disabled. Please use the Vibe Kanban web UI or REST API at /api/config/config instead."));
         }
         if let Some(analytics) = updates.analytics_enabled {
-            config.analytics_enabled = Some(analytics);
-        }
-        // Note: telemetry_enabled doesn't exist in Config v7, only telemetry_acknowledged
-        if let Some(telemetry) = updates.telemetry_enabled {
-            config.telemetry_acknowledged = telemetry;
+            config_obj.insert("analytics_enabled".to_string(), serde_json::Value::Bool(analytics));
         }
         // Note: editor field is EditorConfig, not a String - for now, skip this field
-        // TODO: Implement proper editor config parsing
         if updates.editor.is_some() {
             return Err(McpError::invalid_request("Updating editor config is not yet supported"));
         }
 
         // Send update
-        let url = self.url("/api/config");
-        self.send_json(self.client.put(&url).json(&config)).await
+        let url = self.url("/api/config/config");
+        let updated_config: serde_json::Value = self.send_json(self.client.put(&url).json(&config_obj)).await?;
+        Ok(updated_config)
     }
 }
 
 #[turbomcp::server(
     name = "vibe-kanban-system",
     version = "1.0.0",
-    description = "System configuration and discovery tools for Vibe Kanban. TOOLS: 'get_system_info', 'get_config', 'update_config', 'list_mcp_servers', 'update_mcp_servers', 'list_executor_profiles', 'get_executor_profile', 'list_git_repos', 'list_directory', 'health_check'. Use these tools to inspect system state, manage configuration, discover resources, and monitor health."
+    description = "System configuration and discovery tools for Vibe Kanban. TOOLS: 'get_system_info', 'get_config', 'update_config', 'list_mcp_servers', 'update_mcp_servers', 'list_executor_profiles', 'list_git_repos', 'list_directory', 'health_check'. Use these tools to inspect system state, manage configuration, discover resources, and monitor health."
 )]
 impl SystemServer {
     #[tool(description = "Get system information including OS details and key directories")]
     async fn get_system_info(&self) -> McpResult<String> {
         let env = Environment::new();
-        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        let home_dir = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"));
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
         let system_info = SystemInfo {
@@ -443,21 +396,17 @@ impl SystemServer {
         let hard_timeout = timeout + 2000;
         let depth = request.max_depth.unwrap_or(5);
 
-        // Default to /opt/stacks for better developer experience
-        let default_path = "/opt/stacks".to_string();
-        let path = request.path.clone().or(Some(default_path.clone()));
-
-        let repositories = self
-            .filesystem_service
-            .list_git_repos(path.clone(), timeout, hard_timeout, Some(depth))
+        let fs_service = FilesystemService::new();
+        let repositories = fs_service
+            .list_git_repos(request.path.clone(), timeout, hard_timeout, Some(depth))
             .await
             .map_err(|e| McpError::internal(format!("Failed to list git repositories: {}", e)))?;
 
-        let search_path = request.path.unwrap_or(default_path);
+        let search_path = request.path.unwrap_or_else(|| "home directory".to_string());
 
         let response = ListGitReposResponse {
             count: repositories.len(),
-            repositories,
+            repositories: repositories.into_iter().map(DirectoryEntryWrapper::from).collect(),
             search_path,
         };
         Ok(serde_json::to_string_pretty(&response).unwrap())
@@ -465,15 +414,15 @@ impl SystemServer {
 
     #[tool(description = "List files and directories in a path")]
     async fn list_directory(&self, request: ListDirectoryRequest) -> McpResult<String> {
-        let response: DirectoryListResponse = self
-            .filesystem_service
+        let fs_service = FilesystemService::new();
+        let response: DirectoryListResponse = fs_service
             .list_directory(request.path)
             .await
             .map_err(|e| McpError::internal(format!("Failed to list directory: {}", e)))?;
 
         let wrapper = ListDirectoryResponseWrapper {
             count: response.entries.len(),
-            entries: response.entries,
+            entries: response.entries.into_iter().map(DirectoryEntryWrapper::from).collect(),
             current_path: response.current_path,
         };
         Ok(serde_json::to_string_pretty(&wrapper).unwrap())
@@ -481,24 +430,8 @@ impl SystemServer {
 
     #[tool(description = "List all available executor profiles with their capabilities and availability status")]
     async fn list_executor_profiles(&self) -> McpResult<String> {
-        let url = self.url("/api/executor-profiles");
-        let data: ExecutorProfilesResponseSimple =
-            self.send_json(self.client.get(&url)).await?;
-        Ok(serde_json::to_string_pretty(&data).unwrap())
-    }
-
-    #[tool(description = "Get detailed information about a specific executor profile including availability, capabilities, and configuration. Use this to check if a specific coding agent is available before starting a task.")]
-    async fn get_executor_profile(&self, request: GetExecutorProfileRequest) -> McpResult<String> {
-        // Build URL based on whether variant is specified
-        let url = match &request.variant {
-            Some(variant) if variant != "DEFAULT" => {
-                self.url(&format!("/api/executor-profiles/{}/{}", request.executor, variant))
-            }
-            _ => self.url(&format!("/api/executor-profiles/{}", request.executor)),
-        };
-
-        let data: ExecutorProfileDetailSimple =
-            self.send_json(self.client.get(&url)).await?;
+        let url = self.url("/api/profiles");
+        let data: serde_json::Value = self.send_json(self.client.get(&url)).await?;
         Ok(serde_json::to_string_pretty(&data).unwrap())
     }
 
@@ -531,21 +464,13 @@ impl SystemServer {
 // Custom HTTP runner implementation with permissive security for development
 #[cfg(feature = "http")]
 impl SystemServer {
-    /// Run HTTP server with custom security configuration
-    pub async fn run_http_custom(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use turbomcp_transport::streamable_http::{StreamableHttpConfigBuilder};
-        use std::time::Duration;
-
-        // Create permissive HTTP config for development
-        let config = StreamableHttpConfigBuilder::new()
-            .with_bind_address(addr)
-            .allow_any_origin(true) // Allow any origin in development mode
-            .allow_localhost(true)
-            .with_rate_limit(1_000_000, Duration::from_secs(60)) // Very high limit for development
-            .build();
-
-        // Run the HTTP server with custom config (v2.3 API uses method on server)
-        self.run_http_with_config(addr, config).await?;
+    /// Run HTTP server on the specified address
+    #[cfg(feature = "http")]
+    pub async fn run_http_custom(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Use the generated run_http_with_path method from turbomcp macro
+        self.clone().run_http_with_path(addr, "/mcp").await?;
         Ok(())
     }
 }
+
+

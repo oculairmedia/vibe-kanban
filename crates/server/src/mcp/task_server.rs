@@ -1226,71 +1226,13 @@ impl TaskServer {
         }
     }
 
-    #[tool(description = "List all git branches in a project's repository")]
-    async fn get_project_branches(&self, request: GetProjectBranchesRequest) -> McpResult<String> {
-        let url = self.url(&format!("/api/projects/{}/branches", request.project_id));
-        
-        #[derive(Debug, Deserialize)]
-        struct ApiBranch {
-            name: String,
-            is_current: bool,
-            is_remote: bool,
-        }
+    // DISABLED: Backend API endpoint /api/projects/{id}/branches does not exist
+    // #[tool(description = "List all git branches in a project's repository.")]
+    // async fn get_project_branches(&self, _request: GetProjectBranchesRequest) -> McpResult<String> { ... }
 
-        let branches: Vec<ApiBranch> = self.send_json(self.client.get(&url)).await?;
-
-        let branch_infos: Vec<GitBranchInfo> = branches
-            .into_iter()
-            .map(|b| GitBranchInfo {
-                name: b.name,
-                is_current: b.is_current,
-                is_remote: b.is_remote,
-            })
-            .collect();
-
-        let response = GetProjectBranchesResponse {
-            count: branch_infos.len(),
-            branches: branch_infos,
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
-
-    #[tool(description = "Search for files in a project's repository. Returns matching file and directory paths ranked by relevance.")]
-    async fn search_project_files(&self, request: SearchProjectFilesRequest) -> McpResult<String> {
-        let mode = request.mode.as_deref().unwrap_or("task_form");
-        let url = self.url(&format!(
-            "/api/projects/{}/search?q={}&mode={}",
-            request.project_id,
-            urlencoding::encode(&request.query),
-            mode
-        ));
-
-        #[derive(Debug, Deserialize)]
-        struct ApiSearchResult {
-            path: String,
-            is_file: bool,
-            match_type: String,
-        }
-
-        let results: Vec<ApiSearchResult> = self.send_json(self.client.get(&url)).await?;
-
-        let file_results: Vec<FileSearchResult> = results
-            .into_iter()
-            .map(|r| FileSearchResult {
-                path: r.path,
-                is_file: r.is_file,
-                match_type: r.match_type,
-            })
-            .collect();
-
-        let response = SearchProjectFilesResponse {
-            count: file_results.len(),
-            results: file_results,
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
+    // DISABLED: Backend API endpoint /api/projects/{id}/search does not exist
+    // #[tool(description = "Search for files in a project's repository.")]
+    // async fn search_project_files(&self, _request: SearchProjectFilesRequest) -> McpResult<String> { ... }
 
     #[tool(
         description = "List all the task/tickets in a project with optional filtering by status and search. `project_id` is required!"
@@ -1599,75 +1541,9 @@ impl TaskServer {
     }
 
 
-    #[tool(
-        description = "Get all artifacts (git diffs, commits, execution logs) for a task attempt. Returns work products from execution processes including code changes, commit messages, and process outputs. Useful for reviewing what work was done during an attempt. `attempt_id` is required!"
-    )]
-    async fn get_attempt_artifacts(&self, request: GetAttemptArtifactsRequest) -> McpResult<String> {
-        let mut url = self.url(&format!("/api/task-attempts/{}/artifacts", request.attempt_id));
-
-        // Add query parameters
-        let mut params = vec![];
-        if let Some(artifact_type) = &request.artifact_type {
-            params.push(format!("artifact_type={}", artifact_type));
-        }
-        if let Some(limit) = request.limit {
-            params.push(format!("limit={}", limit));
-        }
-        if let Some(offset) = request.offset {
-            params.push(format!("offset={}", offset));
-        }
-
-        if !params.is_empty() {
-            url.push('?');
-            url.push_str(&params.join("&"));
-        }
-
-        // Define local response type matching the API
-        #[derive(Debug, Deserialize)]
-        struct ApiArtifact {
-            artifact_type: String,
-            process_id: String,
-            content: Option<String>,
-            size_bytes: usize,
-            commit_sha: Option<String>,
-            commit_subject: Option<String>,
-            before_commit: Option<String>,
-            after_commit: Option<String>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ApiArtifactsResponse {
-            attempt_id: String,
-            artifacts: Vec<ApiArtifact>,
-            total_count: usize,
-        }
-
-        let api_response: ApiArtifactsResponse = self.send_json(self.client.get(&url)).await?;
-
-        // Convert to MCP response format
-        let artifacts: Vec<ArtifactSummary> = api_response
-            .artifacts
-            .into_iter()
-            .map(|artifact| ArtifactSummary {
-                artifact_type: artifact.artifact_type,
-                process_id: artifact.process_id,
-                content: artifact.content,
-                size_bytes: artifact.size_bytes,
-                commit_sha: artifact.commit_sha,
-                commit_subject: artifact.commit_subject,
-                before_commit: artifact.before_commit,
-                after_commit: artifact.after_commit,
-            })
-            .collect();
-
-        let response = GetAttemptArtifactsResponse {
-            attempt_id: api_response.attempt_id,
-            artifacts,
-            total_count: api_response.total_count,
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
+    // DISABLED: Backend API endpoint /api/task-attempts/{id}/artifacts does not exist
+    // #[tool(description = "Get all artifacts for a task attempt.")]
+    // async fn get_attempt_artifacts(&self, _request: GetAttemptArtifactsRequest) -> McpResult<String> { ... }
 
     #[tool(
         description = "Create a GitHub pull request for a completed task attempt. The PR will be created from the attempt's branch to the target branch, with the task details included in the PR description. Returns the PR URL on success. `attempt_id` and `title` are required!"
@@ -1863,33 +1739,15 @@ impl TaskServer {
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
-    #[tool(
-        description = "List all execution processes for a task attempt. Returns process history with status, runtime metrics, and git commits. Optionally include soft-deleted processes. `task_attempt_id` is required!"
-    )]
-    async fn list_execution_processes(&self, request: ListExecutionProcessesRequest) -> McpResult<String> {
-        let mut url = self.url("/api/execution-processes");
-        let params = format!("?task_attempt_id={}", request.task_attempt_id);
-        url.push_str(&params);
-        
-        if let Some(show_deleted) = request.show_soft_deleted {
-            url.push_str(&format!("&show_soft_deleted={}", show_deleted));
-        }
-
-        let processes: Vec<ExecutionProcess> = self.send_json(self.client.get(&url)).await?;
-
-        let process_summaries: Vec<ExecutionProcessSummary> = processes
-            .into_iter()
-            .map(ExecutionProcessSummary::from_execution_process)
-            .collect();
-
-        let response = ListExecutionProcessesResponse {
-            count: process_summaries.len(),
-            task_attempt_id: request.task_attempt_id.to_string(),
-            processes: process_summaries,
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
+    // DISABLED: Backend API endpoint does not exist
+    // #[tool(
+    //     description = "List all execution processes for a task attempt. Returns process history with status, runtime metrics, and git commits. Optionally include soft-deleted processes. `task_attempt_id` is required!"
+    // )]
+    // async fn list_execution_processes(&self, _request: ListExecutionProcessesRequest) -> McpResult<String> {
+    //     Err(McpError::internal(
+    //         "This tool is temporarily disabled. The /api/execution-processes endpoint does not support listing by attempt_id. Please use the Vibe Kanban web UI to view execution processes for an attempt.",
+    //     ))
+    // }
 
     #[tool(
         description = "Get the raw stdout/stderr logs for an execution process. Returns all log messages including stdout, stderr, and process state. Useful for debugging task execution and understanding what happened during a run. `process_id` is required!"
@@ -2038,126 +1896,27 @@ impl TaskServer {
         Ok(serde_json::to_string_pretty(&response).unwrap())
     }
 
-    #[tool(
-        description = "Get the git branch synchronization status for a task attempt. Shows how many commits the attempt branch is ahead/behind the target branch, uncommitted changes, conflict status, and remote sync information if a PR is open. Useful for understanding if a branch needs rebasing or is ready to merge. `attempt_id` is required!"
-    )]
-    async fn get_branch_status(&self, request: GetBranchStatusRequest) -> McpResult<String> {
-        let url = self.url(&format!("/api/task-attempts/{}/branch-status", request.attempt_id));
+    // DISABLED: Backend API endpoint does not exist
+    // #[tool(
+    //     description = "Get the git branch synchronization status for a task attempt. Shows how many commits the attempt branch is ahead/behind the target branch, uncommitted changes, conflict status, and remote sync information if a PR is open. Useful for understanding if a branch needs rebasing or is ready to merge. `attempt_id` is required!"
+    // )]
+    // async fn get_branch_status(&self, _request: GetBranchStatusRequest) -> McpResult<String> {
+    //     Err(McpError::internal(
+    //         "Branch status via MCP is temporarily disabled. The backend API endpoint for this feature does not exist. \
+    //          Please use the Vibe Kanban web UI to view branch status, or access the git repository directly."
+    //     ))
+    // }
 
-        // Define local response type matching the API
-        #[derive(Debug, Deserialize)]
-        struct ApiBranchStatus {
-            commits_behind: Option<usize>,
-            commits_ahead: Option<usize>,
-            has_uncommitted_changes: Option<bool>,
-            head_oid: Option<String>,
-            uncommitted_count: Option<usize>,
-            untracked_count: Option<usize>,
-            target_branch_name: String,
-            remote_commits_behind: Option<usize>,
-            remote_commits_ahead: Option<usize>,
-            is_rebase_in_progress: bool,
-            conflict_op: Option<String>,
-            conflicted_files: Vec<String>,
-        }
-
-        let api_response: ApiBranchStatus = self.send_json(self.client.get(&url)).await?;
-
-        // Check conflict status before moving conflicted_files
-        let has_conflicts = !api_response.conflicted_files.is_empty();
-
-        // Convert to MCP response format
-        let response = GetBranchStatusResponse {
-            attempt_id: request.attempt_id.to_string(),
-            target_branch: api_response.target_branch_name,
-            commits_ahead: api_response.commits_ahead,
-            commits_behind: api_response.commits_behind,
-            sync_status: determine_sync_status(
-                api_response.commits_ahead,
-                api_response.commits_behind,
-                api_response.has_uncommitted_changes,
-                api_response.is_rebase_in_progress,
-                has_conflicts,
-            ),
-            has_uncommitted_changes: api_response.has_uncommitted_changes,
-            uncommitted_count: api_response.uncommitted_count,
-            untracked_count: api_response.untracked_count,
-            head_commit: api_response.head_oid,
-            remote_commits_ahead: api_response.remote_commits_ahead,
-            remote_commits_behind: api_response.remote_commits_behind,
-            is_rebase_in_progress: api_response.is_rebase_in_progress,
-            has_conflicts,
-            conflict_operation: api_response.conflict_op,
-            conflicted_files: if api_response.conflicted_files.is_empty() {
-                None
-            } else {
-                Some(api_response.conflicted_files)
-            },
-            suggested_actions: suggest_actions(
-                api_response.commits_ahead,
-                api_response.commits_behind,
-                api_response.has_uncommitted_changes,
-                api_response.is_rebase_in_progress,
-                has_conflicts,
-                api_response.remote_commits_behind,
-            ),
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
-
-    #[tool(
-        description = "Get all commits for a task attempt with detailed metadata and diff statistics. Returns commit messages, authors, timestamps, and change statistics (files changed, additions, deletions). Useful for reviewing what changes were made during an attempt. `attempt_id` is required!"
-    )]
-    async fn get_attempt_commits(&self, request: GetAttemptCommitsRequest) -> McpResult<String> {
-        let url = self.url(&format!("/api/task-attempts/{}/commits", request.attempt_id));
-
-        // Define local response type matching the API
-        #[derive(Debug, Deserialize)]
-        struct ApiCommitDetails {
-            sha: String,
-            message: String,
-            author_name: Option<String>,
-            author_email: Option<String>,
-            timestamp: Option<String>,
-            files_changed: Option<usize>,
-            additions: Option<usize>,
-            deletions: Option<usize>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct ApiCommitsResponse {
-            attempt_id: String,
-            commits: Vec<ApiCommitDetails>,
-            total_count: usize,
-        }
-
-        let api_response: ApiCommitsResponse = self.send_json(self.client.get(&url)).await?;
-
-        // Convert to MCP response format
-        let commits: Vec<CommitDetails> = api_response
-            .commits
-            .into_iter()
-            .map(|commit| CommitDetails {
-                sha: commit.sha,
-                message: commit.message,
-                author_name: commit.author_name,
-                author_email: commit.author_email,
-                timestamp: commit.timestamp,
-                files_changed: commit.files_changed,
-                additions: commit.additions,
-                deletions: commit.deletions,
-            })
-            .collect();
-
-        let response = GetAttemptCommitsResponse {
-            attempt_id: api_response.attempt_id,
-            commits,
-            total_count: api_response.total_count,
-        };
-
-        Ok(serde_json::to_string_pretty(&response).unwrap())
-    }
+    // DISABLED: Backend API endpoint does not exist
+    // #[tool(
+    //     description = "Get all commits for a task attempt with detailed metadata and diff statistics. Returns commit messages, authors, timestamps, and change statistics (files changed, additions, deletions). Useful for reviewing what changes were made during an attempt. `attempt_id` is required!"
+    // )]
+    // async fn get_attempt_commits(&self, _request: GetAttemptCommitsRequest) -> McpResult<String> {
+    //     Err(McpError::internal(
+    //         "Getting attempt commits via MCP is temporarily disabled. The backend API endpoint for this feature does not exist. \
+    //          Please use the Vibe Kanban web UI to view commits, or access the git repository directly using `git log`."
+    //     ))
+    // }
 
     #[tool(
         description = "Compare a commit SHA to the current HEAD of an attempt branch. Returns how many commits ahead and behind, and whether the history is linear. Useful for understanding if a commit can be fast-forwarded or needs rebasing. `attempt_id` and `commit_sha` are required!"
