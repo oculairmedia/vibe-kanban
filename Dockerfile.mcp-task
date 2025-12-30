@@ -1,17 +1,19 @@
-# Build stage
-FROM rustlang/rust:nightly-alpine AS builder
+# Build stage - use Debian for glibc (bindgen/libclang compatibility)
+FROM rust:1-slim-bookworm AS builder
 
-# Install build dependencies
-RUN apk add --no-cache \
-    musl-dev \
-    openssl-dev \
-    openssl-libs-static \
-    pkgconfig \
-    perl \
-    make \
-    clang \
-    clang-dev \
-    llvm-dev
+# Install build dependencies including git for fetching git dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libssl-dev \
+    pkg-config \
+    libclang-dev \
+    cmake \
+    zlib1g-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust nightly (required for edition 2024)
+RUN rustup default nightly
 
 # Set working directory
 WORKDIR /app
@@ -19,22 +21,30 @@ WORKDIR /app
 # Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY assets ./assets
+COPY .sqlx ./.sqlx
 
-# Build the MCP task server binary
+# Configure git to use https for GitHub (public repos don't need auth)
+RUN git config --global url."https://github.com/".insteadOf git@github.com:
+
+# Build the MCP task server binary without the codex feature (to avoid codex-protocol compilation errors)
+# Use SQLx offline mode since we don't have a database at build time
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin mcp_task_server
 
-# Runtime stage
-FROM alpine:latest AS runtime
+# Runtime stage - use Debian slim to match builder (glibc compatibility)
+FROM debian:bookworm-slim AS runtime
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     ca-certificates \
     tini \
-    libgcc
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create app user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/mcp_task_server /usr/local/bin/mcp_task_server
@@ -44,16 +54,16 @@ USER appuser
 
 # Set runtime environment
 ENV HOST=0.0.0.0
-ENV MCP_PORT=3456
+ENV MCP_PORT=9717
 ENV TRANSPORT=http
 ENV RUST_LOG=info
 
-EXPOSE 3456
+EXPOSE 9717
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --quiet --tries=1 --spider "http://${HOST}:${MCP_PORT}/health" || exit 1
+    CMD wget --quiet --tries=1 --spider "http://${HOST}:${MCP_PORT}/mcp" || exit 1
 
 # Run the MCP task server
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["mcp_task_server"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/usr/local/bin/mcp_task_server"]
