@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-bundled-sqlite = ["libsqlite3-sys/bundled"]
+bundled-sqlite = ["dep:libsqlite3-sys", "libsqlite3-sys/bundled"]
 
 [dependencies]
 libsqlite3-sys = { version = "0.30", optional = true }
