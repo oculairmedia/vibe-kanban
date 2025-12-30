@@ -1,0 +1,54 @@
+# Build stage
+FROM rust:1.83-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    pkgconfig
+
+# Set working directory
+WORKDIR /app
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+
+# Build the MCP system server binary
+RUN cargo build --release --bin mcp_system_server
+
+# Runtime stage
+FROM alpine:latest AS runtime
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tini \
+    libgcc
+
+# Create app user for security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/mcp_system_server /usr/local/bin/mcp_system_server
+
+# Switch to non-root user
+USER appuser
+
+# Set runtime environment
+ENV HOST=0.0.0.0
+ENV MCP_PORT=3457
+ENV TRANSPORT=http
+ENV RUST_LOG=info
+
+EXPOSE 3457
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider "http://${HOST}:${MCP_PORT}/health" || exit 1
+
+# Run the MCP system server
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["mcp_system_server"]
