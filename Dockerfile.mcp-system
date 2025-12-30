@@ -21,9 +21,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
 # Build the MCP system server binary
-# Use system SQLite to avoid bindgen/libclang issues with musl
-ENV LIBSQLITE3_SYS_USE_PKG_CONFIG=1
-RUN cargo build --release --bin mcp_system_server
+# Use bundled SQLite to avoid bindgen/libclang issues with musl
+RUN cargo build --release --bin mcp_system_server --features db/bundled-sqlite
 
 # Runtime stage
 FROM alpine:latest AS runtime
