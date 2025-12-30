@@ -21,9 +21,12 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
 # Build the MCP task server binary
-# Use system SQLite to avoid bindgen/libclang issues with musl
-ENV LIBSQLITE3_SYS_USE_PKG_CONFIG=1
-RUN cargo build --release --bin mcp_task_server
+# Use bundled SQLite to avoid bindgen/libclang issues with musl
+# SQLCIPHER disabled to avoid OpenSSL bindgen issues
+ENV SQLITE3_STATIC=1
+ENV SQLCIPHER_LIB_DIR=/usr/lib
+ENV SQLCIPHER_INCLUDE_DIR=/usr/include
+RUN cargo build --release --bin mcp_task_server --features db/bundled-sqlite
 
 # Runtime stage
 FROM alpine:latest AS runtime
